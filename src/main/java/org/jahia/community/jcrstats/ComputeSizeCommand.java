@@ -127,6 +127,7 @@ public class ComputeSizeCommand implements Action {
             writeGraphData(subNodeStats, bufferedWriter, level + 1, startPosition);
             startPosition = startPosition + subNodeStats.getSize();
         }
+        bufferedWriter.flush();
     }
 
     private NodeStats computeSize(JCRSessionWrapper session, String currentPath) throws RepositoryException {
