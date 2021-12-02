@@ -9,14 +9,14 @@
     <groupId>org.jahia.community</groupId>
     <artifactId>jcr-stats</artifactId>
     <name>jcr-stats</name>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>1.0.1</version>
     <packaging>bundle</packaging>
     <description>This is a custom module to help analyze space usage in the JCR.</description>
 
     <scm>
         <connection>scm:git:git@github.com:Jahia/jcr-stats</connection>
         <developerConnection>scm:git:git@github.com:Jahia/jcr-stats</developerConnection>
-        <tag>HEAD</tag>
+        <tag>1_0_1</tag>
     </scm>
     
     <properties>
