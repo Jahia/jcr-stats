@@ -1,0 +1,13 @@
+{
+    "label": {
+        "settings": {
+            "title": "jcr-stats setting"
+        },
+        "action": {
+            "title": "jcr-stats - How to extend the ui ?"
+        },
+        "appsAccordion": {
+            "title": "jcr-stats"
+        }
+    }
+}

@@ -1,0 +1,7 @@
+{
+    "jahia*disabled*": {
+        "apps": {
+            "jahia": "javascript/apps/registerExtensions.js"
+        }
+    }
+}
