@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                      http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0                       http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <artifactId>jahia-modules</artifactId>
@@ -12,14 +9,14 @@
     <groupId>org.jahia.community</groupId>
     <artifactId>jcr-stats</artifactId>
     <name>jcr-stats</name>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>bundle</packaging>
     <description>This is a custom module to help analyze space usage in the JCR.</description>
 
     <scm>
         <connection>scm:git:git@github.com:Jahia/jcr-stats</connection>
         <developerConnection>scm:git:git@github.com:Jahia/jcr-stats</developerConnection>
-        <tag>HEAD</tag>
+        <tag>1_0_0</tag>
     </scm>
     
     <properties>
