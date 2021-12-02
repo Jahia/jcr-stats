@@ -1,7 +1,7 @@
 # JCR Statistics
 DX module that provides some statistics about the space usage in the JCR
 * [How to use it](#how-to-use)
-    * [utils:graph-missing-dependencies](#utils-graph-missing-dependencies)
+    * [jcr-stats:compute-size](#jcr-stats-compute-size)
 
 ## <a name="how-to-use"></a>How to use?
 
