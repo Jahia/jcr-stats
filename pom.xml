@@ -4,7 +4,7 @@
     <parent>
         <artifactId>jahia-modules</artifactId>
         <groupId>org.jahia.modules</groupId>
-        <version>7.3.9.0</version>
+        <version>7.3.6.0</version>
     </parent>
     <groupId>org.jahia.community</groupId>
     <artifactId>jcr-stats</artifactId>
@@ -22,6 +22,7 @@
     <properties>
         <jahia-depends>default</jahia-depends>
         <jahia-module-type>system</jahia-module-type>
+        <!--<require-capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=12))"</require-capability>-->
     </properties>
 
     <repositories>
@@ -61,6 +62,7 @@
                 <extensions>true</extensions>
                 <configuration>
                     <instructions>
+                        <Bundle-RequiredExecutionEnvironment>JavaSE-11</Bundle-RequiredExecutionEnvironment>
                         <Karaf-Commands>*</Karaf-Commands>
                         <_dsannotations>*</_dsannotations>
                     </instructions>
@@ -71,8 +73,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>2.3.2</version>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <release>11</release>
                 </configuration>
             </plugin>
         </plugins>
