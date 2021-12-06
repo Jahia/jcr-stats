@@ -24,6 +24,7 @@ import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.Option;
 import org.apache.karaf.shell.api.action.lifecycle.Service;
 import org.jahia.api.Constants;
+import org.jahia.services.content.JCRContentUtils;
 import org.jahia.services.content.JCRNodeIteratorWrapper;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRSessionFactory;
@@ -134,7 +135,7 @@ public class ComputeSizeCommand implements Action {
         session.refresh(false);
         final NodeStats currentNodeStats = new NodeStats(currentPath);
         final QueryManagerWrapper manager = session.getWorkspace().getQueryManager();
-        final String queryStmt = String.format("SELECT * FROM [%s] AS content WHERE ISCHILDNODE(content, '%s')", JcrConstants.NT_BASE, currentPath);
+        final String queryStmt = String.format("SELECT * FROM [%s] AS content WHERE ISCHILDNODE(content, '%s')", JcrConstants.NT_BASE, JCRContentUtils.sqlEncode(currentPath));
         final QueryWrapper query = manager.createQuery(queryStmt, Query.JCR_SQL2);
         final JCRNodeIteratorWrapper nodeIterator = query.execute().getNodes();
         final JCRNodeWrapper nodeWrapper = session.getNode(currentPath, false);
