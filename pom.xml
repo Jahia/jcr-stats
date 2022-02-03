@@ -4,7 +4,7 @@
     <parent>
         <artifactId>jahia-modules</artifactId>
         <groupId>org.jahia.modules</groupId>
-        <version>7.3.6.0</version>
+        <version>7.2.3.0</version>
     </parent>
     <groupId>org.jahia.community</groupId>
     <artifactId>jcr-stats</artifactId>
@@ -46,12 +46,6 @@
             <artifactId>org.apache.karaf.shell.console</artifactId>
             <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpasyncclient-osgi</artifactId>
-            <version>4.1.4</version>
-            <type>jar</type>
-        </dependency>
     </dependencies>
 
     <build>
@@ -62,18 +56,9 @@
                 <extensions>true</extensions>
                 <configuration>
                     <instructions>
-                        <Bundle-RequiredExecutionEnvironment>JavaSE-11</Bundle-RequiredExecutionEnvironment>
                         <Karaf-Commands>*</Karaf-Commands>
                         <_dsannotations>*</_dsannotations>
                     </instructions>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>2.3.2</version>
-                <configuration>
-                    <release>11</release>
                 </configuration>
             </plugin>
         </plugins>
