@@ -1,21 +1,5 @@
 package org.jahia.community.jcrstats;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import javax.jcr.RepositoryException;
-import javax.jcr.query.Query;
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.core.fs.FileSystem;
@@ -24,17 +8,22 @@ import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.Option;
 import org.apache.karaf.shell.api.action.lifecycle.Service;
 import org.jahia.api.Constants;
-import org.jahia.services.content.JCRContentUtils;
-import org.jahia.services.content.JCRNodeIteratorWrapper;
-import org.jahia.services.content.JCRNodeWrapper;
-import org.jahia.services.content.JCRSessionFactory;
-import org.jahia.services.content.JCRSessionWrapper;
-import org.jahia.services.content.JCRTemplate;
-import org.jahia.services.content.QueryManagerWrapper;
+import org.jahia.services.content.*;
 import org.jahia.services.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+
+import javax.jcr.RepositoryException;
+import javax.jcr.query.Query;
+import java.io.*;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 @Command(scope = "jcr-stats", name = "compute-size", description = "Compute size")
 @Service
@@ -43,7 +32,7 @@ public class ComputeSizeCommand implements Action {
     private static final Logger LOGGER = LoggerFactory.getLogger(ComputeSizeCommand.class);
     private static final String FILE_NAME = "flamegraph";
     private static final String FILE_EXT = ".html";
-    private static final Path TMP_PATH = Path.of(System.getProperty("java.io.tmpdir"));
+    private static final Path TMP_PATH = FileSystems.getDefault().getPath(System.getProperty("java.io.tmpdir"));
 
     @Option(name = "-p", aliases = "--path", description = "Path to compute")
     private String path = "/";
