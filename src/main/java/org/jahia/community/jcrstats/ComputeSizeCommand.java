@@ -42,7 +42,12 @@ public class ComputeSizeCommand implements Action {
 
     @Override
     public Object execute() throws RepositoryException {
-        final NodeStats nodeStats = JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path));
+        final NodeStats nodeStats = JCRTemplate.getInstance().doExecuteWithSystemSession(new JCRCallback<NodeStats>() {
+            @Override
+            public NodeStats doInJCR(JCRSessionWrapper session) throws RepositoryException {
+                return ComputeSizeCommand.this.computeSize(session, path);
+            }
+        });
         writeGraphFile(nodeStats);
         return null;
     }
