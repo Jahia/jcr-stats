@@ -4,7 +4,7 @@
     <parent>
         <artifactId>jahia-modules</artifactId>
         <groupId>org.jahia.modules</groupId>
-        <version>7.2.3.0</version>
+        <version>7.2.0.0</version>
     </parent>
     <groupId>org.jahia.community</groupId>
     <artifactId>jcr-stats</artifactId>
@@ -22,7 +22,6 @@
     <properties>
         <jahia-depends>default</jahia-depends>
         <jahia-module-type>system</jahia-module-type>
-        <!--<require-capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=12))"</require-capability>-->
     </properties>
 
     <repositories>
