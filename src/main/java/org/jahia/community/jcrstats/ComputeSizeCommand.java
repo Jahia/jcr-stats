@@ -70,10 +70,14 @@ public class ComputeSizeCommand implements Action {
         final String storageFolder = dateFormat.format(new Date());
 
         final File graphFile = graphPath.toFile();
-        try (final InputStream graphStream = new FileInputStream(graphFile); final FileWriter fileWriter = new FileWriter(graphFile, true); final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);) {
-            writeGraphHeader(graphFile);
+        writeGraphHeader(graphFile);
+        try (final FileWriter fileWriter = new FileWriter(graphFile, true) ; final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);) {
             writeGraphData(nodeStats, bufferedWriter, 0, 0L);
-            writeGraphFooter(graphFile);
+        } catch (IOException | RepositoryException ex) {
+            LOGGER.error("Impossible to write graph", ex);
+        }
+        writeGraphFooter(graphFile);
+        try (final InputStream graphStream = new FileInputStream(graphFile); final FileWriter fileWriter = new FileWriter(graphFile, true)) {
             final JCRNodeWrapper jcrStatsNode = mkdirs("/sites/systemsite/files/jcr-stats/" + storageFolder);
             jcrStatsNode.uploadFile(FILE_NAME, graphStream, MediaType.TEXT_HTML_VALUE);
             jcrStatsNode.saveSession();
