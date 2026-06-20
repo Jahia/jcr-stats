@@ -89,7 +89,7 @@ public class NodeStatsTest {
     public void compareTo_reflexive() {
         NodeStats node = new NodeStats("/sites/foo");
         node.setSize(42L);
-        assertThat(node.compareTo(node)).isEqualTo(0);
+        assertThat(node).isEqualByComparingTo(node);
     }
 
     @Test

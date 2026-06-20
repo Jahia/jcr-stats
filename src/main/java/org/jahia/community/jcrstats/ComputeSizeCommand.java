@@ -134,7 +134,10 @@ public class ComputeSizeCommand implements Action {
      * Package-private to allow unit testing without a live JCR session.
      */
     void writeGraphNode(NodeStats nodeStats, BufferedWriter bufferedWriter, int level, long startPosition) throws RepositoryException, IOException {
-        LOGGER.debug("Node {}: {}", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize()));
+        if (LOGGER.isDebugEnabled()) {
+            // Guarded: byteCountToDisplaySize() is evaluated eagerly regardless of log level (Sonar S2629).
+            LOGGER.debug("Node {}: {}", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize()));
+        }
         final String line = String.format("f(%s,%s,%s,%s,\"%s\")", level, startPosition, nodeStats.getSize(), 0, nodeStats.getName());
         bufferedWriter.write(line);
         bufferedWriter.newLine();
