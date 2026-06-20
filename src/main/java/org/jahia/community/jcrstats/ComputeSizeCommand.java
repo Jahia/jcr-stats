@@ -85,7 +85,8 @@ public class ComputeSizeCommand implements Action {
 
         final File graphFile = graphPath.toFile();
         writeGraphHeader(graphFile);
-        try (final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(new FileOutputStream(graphFile, true), StandardCharsets.UTF_8);
+        try (final FileOutputStream fileOutputStream = new FileOutputStream(graphFile, true);
+             final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
              final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
             writeGraphNode(nodeStats, bufferedWriter, 0, 0L);
         } catch (IOException | RepositoryException ex) {
@@ -114,7 +115,8 @@ public class ComputeSizeCommand implements Action {
         try (final InputStream inputStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm");
              final InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
              final BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
-             final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(new FileOutputStream(graphFile, true), StandardCharsets.UTF_8);
+             final FileOutputStream fileOutputStream = new FileOutputStream(graphFile, true);
+             final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
              final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
 
             String line;
