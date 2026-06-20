@@ -50,9 +50,20 @@ public class NodeStats implements Comparable<NodeStats> {
         this.addSize(nodeStats.getSize());
     }
 
+    /**
+     * Orders by size descending (largest first) to control flamegraph display order.
+     * Tie-break by path ascending is required because TreeSet uses compareTo for both
+     * ordering AND uniqueness: two nodes with identical sizes but distinct paths would
+     * otherwise compare as 0 and the second add() would be silently dropped, causing
+     * sibling data loss and a mismatch between the tree structure and the accumulated totals.
+     */
     @Override
     public int compareTo(NodeStats other) {
-        return Long.compare(other.size, this.size);
+        int sizeOrder = Long.compare(other.size, this.size);
+        if (sizeOrder != 0) {
+            return sizeOrder;
+        }
+        return this.path.compareTo(other.path);
     }
 
     @Override

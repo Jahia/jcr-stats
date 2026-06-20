@@ -8,7 +8,13 @@ import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.Option;
 import org.apache.karaf.shell.api.action.lifecycle.Service;
 import org.jahia.api.Constants;
-import org.jahia.services.content.*;
+import org.jahia.services.content.JCRContentUtils;
+import org.jahia.services.content.JCRNodeIteratorWrapper;
+import org.jahia.services.content.JCRNodeWrapper;
+import org.jahia.services.content.JCRSessionFactory;
+import org.jahia.services.content.JCRSessionWrapper;
+import org.jahia.services.content.JCRTemplate;
+import org.jahia.services.content.QueryManagerWrapper;
 import org.jahia.services.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +22,14 @@ import org.springframework.http.MediaType;
 
 import javax.jcr.RepositoryException;
 import javax.jcr.query.Query;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
@@ -47,7 +60,7 @@ public class ComputeSizeCommand implements Action {
         return null;
     }
 
-    public void writeGraphFile(NodeStats nodeStats) {
+    private void writeGraphFile(NodeStats nodeStats) {
         Path graphPath = null;
         try {
             graphPath = Files.createTempFile(TMP_PATH, FILE_NAME, FILE_EXT);
@@ -55,7 +68,7 @@ public class ComputeSizeCommand implements Action {
         } catch (IOException ex) {
             LOGGER.error("Impossible to create graph file", ex);
         } finally {
-            if (deleteTemporaryFile) {
+            if (deleteTemporaryFile && graphPath != null) {
                 try {
                     Files.deleteIfExists(graphPath);
                 } catch (IOException ex) {
@@ -71,13 +84,14 @@ public class ComputeSizeCommand implements Action {
 
         final File graphFile = graphPath.toFile();
         writeGraphHeader(graphFile);
-        try (final FileWriter fileWriter = new FileWriter(graphFile, true) ; final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter);) {
-            writeGraphData(nodeStats, bufferedWriter, 0, 0L);
+        try (final FileWriter fileWriter = new FileWriter(graphFile, true);
+             final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter)) {
+            writeGraphNode(nodeStats, bufferedWriter, 0, 0L);
         } catch (IOException | RepositoryException ex) {
             LOGGER.error("Impossible to write graph", ex);
         }
         writeGraphFooter(graphFile);
-        try (final InputStream graphStream = new FileInputStream(graphFile); final FileWriter fileWriter = new FileWriter(graphFile, true)) {
+        try (final InputStream graphStream = new FileInputStream(graphFile)) {
             final JCRNodeWrapper jcrStatsNode = mkdirs("/sites/systemsite/files/jcr-stats/" + storageFolder);
             jcrStatsNode.uploadFile(FILE_NAME, graphStream, MediaType.TEXT_HTML_VALUE);
             jcrStatsNode.saveSession();
@@ -86,7 +100,7 @@ public class ComputeSizeCommand implements Action {
         }
     }
 
-    public void writeGraphHeader(File graphFile) {
+    private void writeGraphHeader(File graphFile) {
         try {
             final URL inputUrl = this.getClass().getClassLoader().getResource("META-INF/templates/flamegraph.header.vm");
             FileUtils.copyURLToFile(inputUrl, graphFile);
@@ -95,8 +109,12 @@ public class ComputeSizeCommand implements Action {
         }
     }
 
-    public void writeGraphFooter(File graphFile) {
-        try (final InputStream inputStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm"); final InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8); final BufferedReader bufferedReader = new BufferedReader(inputStreamReader); final FileWriter fileWriter = new FileWriter(graphFile, true); final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter)) {
+    private void writeGraphFooter(File graphFile) {
+        try (final InputStream inputStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm");
+             final InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
+             final BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+             final FileWriter fileWriter = new FileWriter(graphFile, true);
+             final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter)) {
 
             String line;
 
@@ -110,15 +128,19 @@ public class ComputeSizeCommand implements Action {
         }
     }
 
-    public void writeGraphData(NodeStats nodeStats, BufferedWriter bufferedWriter, int level, Long startPosition) throws RepositoryException, IOException {
+    /**
+     * Recursively writes one flamegraph data line per node.
+     * Package-private to allow unit testing without a live JCR session.
+     */
+    void writeGraphNode(NodeStats nodeStats, BufferedWriter bufferedWriter, int level, Long startPosition) throws RepositoryException, IOException {
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug(String.format("Node %s: %s", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize())));
+            LOGGER.debug("Node {}: {}", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize()));
         }
         final String line = String.format("f(%s,%s,%s,%s,\"%s\")", level, startPosition, nodeStats.getSize(), 0, nodeStats.getName());
         bufferedWriter.write(line);
         bufferedWriter.newLine();
         for (NodeStats subNodeStats : nodeStats.getSubNodeStats()) {
-            writeGraphData(subNodeStats, bufferedWriter, level + 1, startPosition);
+            writeGraphNode(subNodeStats, bufferedWriter, level + 1, startPosition);
             startPosition = startPosition + subNodeStats.getSize();
         }
         bufferedWriter.flush();
