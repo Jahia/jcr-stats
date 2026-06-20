@@ -86,6 +86,13 @@ public class NodeStatsTest {
     }
 
     @Test
+    public void compareTo_reflexive() {
+        NodeStats node = new NodeStats("/sites/foo");
+        node.setSize(42L);
+        assertThat(node.compareTo(node)).isEqualTo(0);
+    }
+
+    @Test
     public void subNodeStats_iteratesInSizeDescendingOrder() {
         NodeStats parent = new NodeStats("/parent");
         NodeStats small = new NodeStats("/parent/small");
@@ -133,11 +140,12 @@ public class NodeStatsTest {
     }
 
     @Test
-    public void equals_differentSize_areNotEqual() {
+    public void equals_samePathDifferentSize_areEqual() {
+        // Identity is the JCR path only; size is a derived/structural attribute.
         NodeStats a = new NodeStats("/sites/foo");
         a.setSize(42L);
         NodeStats b = new NodeStats("/sites/foo");
         b.setSize(99L);
-        assertThat(a).isNotEqualTo(b);
+        assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
     }
 }

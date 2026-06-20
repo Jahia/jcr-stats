@@ -26,10 +26,11 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
@@ -84,8 +85,8 @@ public class ComputeSizeCommand implements Action {
 
         final File graphFile = graphPath.toFile();
         writeGraphHeader(graphFile);
-        try (final FileWriter fileWriter = new FileWriter(graphFile, true);
-             final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter)) {
+        try (final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(new FileOutputStream(graphFile, true), StandardCharsets.UTF_8);
+             final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
             writeGraphNode(nodeStats, bufferedWriter, 0, 0L);
         } catch (IOException | RepositoryException ex) {
             LOGGER.error("Impossible to write graph", ex);
@@ -113,8 +114,8 @@ public class ComputeSizeCommand implements Action {
         try (final InputStream inputStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm");
              final InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
              final BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
-             final FileWriter fileWriter = new FileWriter(graphFile, true);
-             final BufferedWriter bufferedWriter = new BufferedWriter(fileWriter)) {
+             final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(new FileOutputStream(graphFile, true), StandardCharsets.UTF_8);
+             final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
 
             String line;
 
@@ -132,10 +133,8 @@ public class ComputeSizeCommand implements Action {
      * Recursively writes one flamegraph data line per node.
      * Package-private to allow unit testing without a live JCR session.
      */
-    void writeGraphNode(NodeStats nodeStats, BufferedWriter bufferedWriter, int level, Long startPosition) throws RepositoryException, IOException {
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Node {}: {}", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize()));
-        }
+    void writeGraphNode(NodeStats nodeStats, BufferedWriter bufferedWriter, int level, long startPosition) throws RepositoryException, IOException {
+        LOGGER.debug("Node {}: {}", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize()));
         final String line = String.format("f(%s,%s,%s,%s,\"%s\")", level, startPosition, nodeStats.getSize(), 0, nodeStats.getName());
         bufferedWriter.write(line);
         bufferedWriter.newLine();

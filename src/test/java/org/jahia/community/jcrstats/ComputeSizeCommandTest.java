@@ -4,7 +4,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.BufferedWriter;
-import java.io.IOException;
 import java.io.StringWriter;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,21 +92,17 @@ public class ComputeSizeCommandTest {
                 .filter(l -> !l.isBlank())
                 .toArray(String[]::new);
 
-        // alpha starts at 0, beta starts at 400 (alpha's size)
-        assertThat(lines[1]).contains(",0,400,");   // startPosition=0 for alpha
-        assertThat(lines[2]).contains(",400,100,");  // startPosition=400 for beta
+        // alpha starts at 0 (level 1), beta starts at 400 (alpha's size, level 1)
+        assertThat(lines[1]).isEqualTo("f(1,0,400,0,\"alpha\")");
+        assertThat(lines[2]).isEqualTo("f(1,400,100,0,\"beta\")");
     }
 
     // --- helper ---
 
-    private String invokeWriteGraphNode(NodeStats nodeStats, int level, Long startPosition) throws IOException {
+    private String invokeWriteGraphNode(NodeStats nodeStats, int level, long startPosition) throws Exception {
         StringWriter sw = new StringWriter();
         try (BufferedWriter bw = new BufferedWriter(sw)) {
-            try {
-                command.writeGraphNode(nodeStats, bw, level, startPosition);
-            } catch (Exception ex) {
-                throw new IOException(ex);
-            }
+            command.writeGraphNode(nodeStats, bw, level, startPosition);
         }
         return sw.toString();
     }
