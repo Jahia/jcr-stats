@@ -50,18 +50,27 @@ public class NodeStats implements Comparable<NodeStats> {
         this.addSize(nodeStats.getSize());
     }
 
+    /**
+     * Orders by size descending (largest first) to control flamegraph display order.
+     * Tie-break by path ascending is required because TreeSet uses compareTo for both
+     * ordering AND uniqueness: two nodes with identical sizes but distinct paths would
+     * otherwise compare as 0 and the second add() would be silently dropped, causing
+     * sibling data loss and a mismatch between the tree structure and the accumulated totals.
+     */
     @Override
     public int compareTo(NodeStats other) {
-        return Long.compare(other.size, this.size);
+        int sizeOrder = Long.compare(other.size, this.size);
+        if (sizeOrder != 0) {
+            return sizeOrder;
+        }
+        return this.path.compareTo(other.path);
     }
 
+    // Identity is the JCR path (unique per node); size and children are derived.
+    // This keeps equals consistent with compareTo's tie-break so the TreeSet never collapses distinct nodes.
     @Override
     public int hashCode() {
-        int hash = 7;
-        hash = 37 * hash + Objects.hashCode(this.subNodeStats);
-        hash = 37 * hash + Objects.hashCode(this.path);
-        hash = 37 * hash + Objects.hashCode(this.size);
-        return hash;
+        return Objects.hashCode(this.path);
     }
 
     @Override
@@ -76,12 +85,6 @@ public class NodeStats implements Comparable<NodeStats> {
             return false;
         }
         final NodeStats other = (NodeStats) obj;
-        if (!Objects.equals(this.path, other.path)) {
-            return false;
-        }
-        if (!Objects.equals(this.subNodeStats, other.subNodeStats)) {
-            return false;
-        }
-        return Objects.equals(this.size, other.size);
+        return Objects.equals(this.path, other.path);
     }
 }

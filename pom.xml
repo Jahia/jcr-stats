@@ -22,7 +22,6 @@
     <properties>
         <jahia-depends>default</jahia-depends>
         <jahia-module-type>system</jahia-module-type>
-        <!--<require-capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=12))"</require-capability>-->
     </properties>
 
     <repositories>
@@ -45,6 +44,18 @@
             <groupId>org.apache.karaf.shell</groupId>
             <artifactId>org.apache.karaf.shell.console</artifactId>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.24.2</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
