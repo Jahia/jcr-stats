@@ -30,8 +30,6 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('#jcrstats-path').type('/sites/systemsite');
         cy.contains('button', 'Compute size').click();
 
-        // The react-flame-graph panel renders in-app from jcrStats.tree; its root frame is
-        // labelled with the computed root node name.
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
             .should('be.visible')
             .and('contain', 'systemsite');
@@ -40,6 +38,18 @@ describe('JCR Stats - Admin UI', () => {
         // The generated HTML report is no longer shown in the UI
         cy.get('[data-testid="jcrstats-flamegraph-frame"]').should('not.exist');
         cy.get('[data-testid="jcrstats-reports"]').should('not.exist');
+    });
+
+    it('submits the form with Ctrl+Enter', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.get('#jcrstats-path').clear();
+        cy.get('#jcrstats-path').type('/sites/systemsite');
+        // No button click — Ctrl+Enter in the path field triggers the computation
+        cy.get('#jcrstats-path').type('{ctrl}{enter}');
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
+            .should('be.visible')
+            .and('contain', 'systemsite');
     });
 
     it('sizes the flamegraph to the viewport: full-width and not past the window bottom', () => {
@@ -51,11 +61,24 @@ describe('JCR Stats - Admin UI', () => {
         cy.window().then(win => {
             cy.get('[data-testid="jcrstats-flamegraph-react"]').then($el => {
                 const rect = $el[0].getBoundingClientRect();
-                // Fills most of the viewport width...
                 expect(rect.width, 'flamegraph width').to.be.greaterThan(win.innerWidth * 0.5);
-                // ...and its bottom stays within the window (allow a few px for borders/rounding)
                 expect(rect.bottom, 'flamegraph bottom vs window').to.be.at.most(win.innerHeight + 4);
             });
         });
+    });
+
+    it('reacts to clicking a flamegraph frame (focus/zoom)', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains('button', 'Compute size').click();
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
+            .should('be.visible')
+            .and('contain', 'systemsite');
+
+        // Frames are SVG <rect>s; the text <div> has pointer-events:none, so a real click
+        // lands on the rect. Click by coordinate within the top row (rowHeight=20) to hit the
+        // root frame, then the caption reports the focused node.
+        cy.get('[data-testid="jcrstats-flamegraph-react"]').click(80, 10);
+        cy.get('[data-testid="jcrstats-flamegraph-caption"]', {timeout: 10000}).should('contain', 'Focused');
     });
 });

@@ -40,6 +40,7 @@ export const JcrStatsAdmin = () => {
     const {t} = useTranslation('jcr-stats');
     const [path, setPath] = useState(DEFAULT_PATH);
     const [status, setStatus] = useState(null);
+    const [focused, setFocused] = useState(null);
     const containerRef = useRef(null);
     const [dimensions, setDimensions] = useState({width: 900, height: 600});
 
@@ -77,8 +78,16 @@ export const JcrStatsAdmin = () => {
         return () => window.removeEventListener('resize', measure);
     }, [flameData, measure]);
 
+    // Clicking a frame zooms react-flame-graph and reports the focused node here.
+    const handleFocusChange = useCallback(node => {
+        if (node) {
+            setFocused({name: node.name, value: node.value});
+        }
+    }, []);
+
     const handleCompute = async () => {
         setStatus(null);
+        setFocused(null);
         try {
             await loadTree({variables: {path: path || '/', maxDepth: MAX_DEPTH}});
             setStatus('success');
@@ -113,6 +122,13 @@ export const JcrStatsAdmin = () => {
                     className={styles.js_input}
                     value={path}
                     onChange={e => setPath(e.target.value)}
+                    onKeyDown={e => {
+                        // Ctrl+Enter (or Cmd+Enter) submits the form.
+                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            handleCompute();
+                        }
+                    }}
                 />
                 <Button
                     size="big"
@@ -139,14 +155,24 @@ export const JcrStatsAdmin = () => {
             {/* Interactive, in-app flamegraph rendered directly in React from jcrStats.tree */}
             {flameData && (
                 <div className={styles.js_interactive}>
-                    <Typography weight="bold" className={styles.js_interactive_title}>
-                        {t('label.interactiveTitle')}
-                    </Typography>
+                    <div className={styles.js_interactive_head}>
+                        <Typography weight="bold" className={styles.js_interactive_title}>
+                            {t('label.interactiveTitle')}
+                        </Typography>
+                        <Typography className={styles.js_hint}>{t('label.clickHint')}</Typography>
+                    </div>
                     <div data-testid="jcrstats-flamegraph-caption" className={styles.js_caption}>
-                        {tree.name} — {formatBytes(tree.size)}
+                        {focused
+                            ? `${t('label.focused')}: ${focused.name} — ${formatBytes(focused.value)}`
+                            : `${tree.name} — ${formatBytes(tree.size)}`}
                     </div>
                     <div ref={containerRef} data-testid="jcrstats-flamegraph-react" className={styles.js_flamegraph_react}>
-                        <FlameGraph data={flameData} height={dimensions.height} width={dimensions.width}/>
+                        <FlameGraph
+                            data={flameData}
+                            height={dimensions.height}
+                            width={dimensions.width}
+                            onChange={handleFocusChange}
+                        />
                     </div>
                 </div>
             )}

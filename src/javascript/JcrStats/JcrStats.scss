@@ -116,3 +116,16 @@
   background: #ffffff;
   overflow: hidden;
 }
+
+.js_interactive_head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-medium, 16px);
+  flex-wrap: wrap;
+}
+
+.js_hint {
+  font-size: 0.8125rem;
+  color: var(--color-gray, #5c6370);
+}

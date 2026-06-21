@@ -3,19 +3,14 @@
     "menu_entry": "JCR Statistics",
     "menu_execution": "Compute size",
     "title": "JCR Statistics",
-    "description": "Compute the size of a JCR subtree and generate a flamegraph report stored in the JCR under /sites/systemsite/files/jcr-stats. The same computation is available as the jcr-stats:compute-size Karaf command and the jcrStats GraphQL API.",
+    "description": "Compute the size of a JCR subtree and explore it as an interactive flamegraph. The same computation is available as the jcr-stats:compute-size Karaf command and the jcrStats GraphQL API.",
     "path": "Path",
     "compute": "Compute size",
     "computing": "Computing…",
     "success": "Computation completed successfully.",
     "error": "An error occurred. Check server logs for details.",
-    "resultTitle": "Result",
-    "totalSize": "Total size",
-    "nodeCount": "Node count",
-    "flamegraph": "Flamegraph",
-    "openNewTab": "Open flamegraph in a new tab",
     "interactiveTitle": "Interactive flamegraph",
-    "htmlReportTitle": "Generated HTML report",
-    "reportsTitle": "Generated reports"
+    "clickHint": "Click a frame to zoom in; click a parent frame to zoom back out.",
+    "focused": "Focused"
   }
 }
