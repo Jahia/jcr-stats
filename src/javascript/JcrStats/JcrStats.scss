@@ -131,3 +131,18 @@
   border-radius: var(--radius, 4px);
   background: #ffffff;
 }
+
+.js_interactive {
+  margin-top: var(--spacing-large, 24px);
+}
+
+.js_interactive_title {
+  margin-bottom: var(--spacing-small, 8px);
+}
+
+.js_flamegraph_react {
+  border: 1px solid #d3d7db;
+  border-radius: var(--radius, 4px);
+  background: #ffffff;
+  overflow: hidden;
+}

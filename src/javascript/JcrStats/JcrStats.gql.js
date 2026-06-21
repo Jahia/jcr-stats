@@ -34,3 +34,38 @@ export const GET_SIZE = gql`
         }
     }
 `;
+
+export const GET_TREE = gql`
+    query JcrStatsTree($path: String, $maxDepth: Int) {
+        jcrStats {
+            tree(path: $path, maxDepth: $maxDepth) {
+                name
+                size
+                children {
+                    name
+                    size
+                    children {
+                        name
+                        size
+                        children {
+                            name
+                            size
+                            children {
+                                name
+                                size
+                                children {
+                                    name
+                                    size
+                                    children {
+                                        name
+                                        size
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+`;

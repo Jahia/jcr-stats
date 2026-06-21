@@ -1,11 +1,14 @@
-import React, {useState} from 'react';
-import {useMutation, useQuery} from '@apollo/client';
+import React, {useState, useRef, useEffect} from 'react';
+import {useMutation, useQuery, useLazyQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
+import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {COMPUTE_SIZE, GET_REPORTS} from './JcrStats.gql';
+import {COMPUTE_SIZE, GET_REPORTS, GET_TREE} from './JcrStats.gql';
 
 const DEFAULT_PATH = '/sites/systemsite';
+const MAX_DEPTH = 6;
+const FLAMEGRAPH_HEIGHT = 500;
 const KIB = 1024;
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
@@ -22,28 +25,54 @@ const formatBytes = bytes => {
     return `${unitIndex === 0 ? value : value.toFixed(1)} ${UNITS[unitIndex]}`;
 };
 
+// Map the jcrStats.tree GraphQL shape onto react-flame-graph's {name, value, children}.
+// value is floored at 1 so zero-byte subtrees still render a (degenerate) frame instead of NaN widths.
+const toFlameNode = node => ({
+    name: node.name,
+    value: Math.max(Number(node.size), 1),
+    tooltip: `${node.name}: ${formatBytes(node.size)}`,
+    children: (node.children || []).map(toFlameNode)
+});
+
 export const JcrStatsAdmin = () => {
     const {t} = useTranslation('jcr-stats');
     const [path, setPath] = useState(DEFAULT_PATH);
     const [result, setResult] = useState(null);
     const [status, setStatus] = useState(null);
+    const flameRef = useRef(null);
+    const [flameWidth, setFlameWidth] = useState(900);
 
-    React.useEffect(() => {
+    useEffect(() => {
         document.title = `${t('label.title')} — Jahia Administration`;
     }, [t]);
 
     const {data: reportsData, refetch: refetchReports} = useQuery(GET_REPORTS, {fetchPolicy: 'network-only'});
     const [computeSize, {loading}] = useMutation(COMPUTE_SIZE);
+    const [loadTree, {data: treeData}] = useLazyQuery(GET_TREE, {fetchPolicy: 'network-only'});
+
+    const flameData = treeData?.jcrStats?.tree ? toFlameNode(treeData.jcrStats.tree) : null;
+
+    // Size the flamegraph to its container width once the data (and therefore the panel) is present.
+    useEffect(() => {
+        if (flameData && flameRef.current) {
+            const width = flameRef.current.clientWidth;
+            if (width > 0) {
+                setFlameWidth(width);
+            }
+        }
+    }, [flameData]);
 
     const handleCompute = async () => {
         setStatus(null);
         try {
-            const response = await computeSize({variables: {path: path || '/', deleteTemporaryFile: false}});
+            const targetPath = path || '/';
+            const response = await computeSize({variables: {path: targetPath, deleteTemporaryFile: false}});
             const data = response.data?.jcrStats?.computeSize;
             if (data) {
                 setResult(data);
                 setStatus('success');
                 refetchReports();
+                loadTree({variables: {path: targetPath, maxDepth: MAX_DEPTH}});
             } else {
                 setStatus('error');
             }
@@ -115,26 +144,40 @@ export const JcrStatsAdmin = () => {
                         <li>{t('label.nodeCount')}: <span data-testid="jcrstats-result-count">{result.nodeCount}</span></li>
                         <li>{t('label.flamegraph')}: <span data-testid="jcrstats-result-flamegraph">{result.flamegraphPath}</span></li>
                     </ul>
+                </div>
+            )}
 
-                    {result.flamegraphUrl && (
-                        <div className={styles.js_flamegraph}>
-                            <a
-                                data-testid="jcrstats-flamegraph-link"
-                                className={styles.js_flamegraph_link}
-                                href={result.flamegraphUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                {t('label.openNewTab')}
-                            </a>
-                            <iframe
-                                data-testid="jcrstats-flamegraph-frame"
-                                className={styles.js_flamegraph_frame}
-                                title={t('label.flamegraph')}
-                                src={result.flamegraphUrl}
-                            />
-                        </div>
-                    )}
+            {/* Interactive, in-app flamegraph rendered directly in React from the jcrStats.tree data */}
+            {flameData && (
+                <div className={styles.js_interactive}>
+                    <Typography weight="bold" className={styles.js_interactive_title}>
+                        {t('label.interactiveTitle')}
+                    </Typography>
+                    <div ref={flameRef} data-testid="jcrstats-flamegraph-react" className={styles.js_flamegraph_react}>
+                        <FlameGraph data={flameData} height={FLAMEGRAPH_HEIGHT} width={flameWidth}/>
+                    </div>
+                </div>
+            )}
+
+            {/* Server-generated HTML report (the durable / Karaf-command artifact) */}
+            {status === 'success' && result && result.flamegraphUrl && (
+                <div className={styles.js_flamegraph}>
+                    <Typography weight="bold">{t('label.htmlReportTitle')}</Typography>
+                    <a
+                        data-testid="jcrstats-flamegraph-link"
+                        className={styles.js_flamegraph_link}
+                        href={result.flamegraphUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        {t('label.openNewTab')}
+                    </a>
+                    <iframe
+                        data-testid="jcrstats-flamegraph-frame"
+                        className={styles.js_flamegraph_frame}
+                        title={t('label.flamegraph')}
+                        src={result.flamegraphUrl}
+                    />
                 </div>
             )}
 

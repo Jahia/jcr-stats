@@ -38,22 +38,31 @@ describe('JCR Stats - Admin UI', () => {
         });
     });
 
-    it('visualizes the generated flamegraph in an embedded iframe', () => {
+    it('renders the interactive flamegraph directly in React', () => {
         cy.login();
         cy.visit(adminPath);
         cy.contains('button', 'Compute size').click();
         cy.get('[data-testid="jcrstats-result"]', {timeout: 60000}).should('be.visible');
 
-        // The flamegraph is embedded for direct visualization...
+        // The react-flame-graph panel renders in-app (no iframe) from the jcrStats.tree data;
+        // its root frame is labelled with the computed root node name.
+        cy.get('[data-testid="jcrstats-flamegraph-react"]')
+            .should('be.visible')
+            .and('contain', 'systemsite');
+    });
+
+    it('also exposes the server-generated HTML report in an iframe', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains('button', 'Compute size').click();
+        cy.get('[data-testid="jcrstats-result"]', {timeout: 60000}).should('be.visible');
+
         cy.get('[data-testid="jcrstats-flamegraph-frame"]')
             .should('be.visible')
             .and('have.attr', 'src')
             .and('match', FLAMEGRAPH_URL_PATTERN);
-
-        // ...and is also openable in a new tab
         cy.get('[data-testid="jcrstats-flamegraph-link"]')
-            .should('be.visible')
-            .and('have.attr', 'href')
+            .should('have.attr', 'href')
             .and('match', FLAMEGRAPH_URL_PATTERN);
 
         // The iframe source actually serves the renderable flamegraph HTML

@@ -26,6 +26,7 @@ public class JcrStatsQuery {
     private static final Logger LOGGER = LoggerFactory.getLogger(JcrStatsQuery.class);
     private static final String DEFAULT_PATH = "/";
     private static final String REPORTS_BASE_PATH = "/sites/systemsite/files/jcr-stats";
+    private static final int DEFAULT_MAX_DEPTH = 6;
 
     @GraphQLField
     @GraphQLName("size")
@@ -62,6 +63,30 @@ public class JcrStatsQuery {
     }
 
     @GraphQLField
+    @GraphQLName("tree")
+    @GraphQLDescription("Returns the size-weighted node tree under the given path, for client-side flamegraph rendering. "
+            + "Sizes are fully aggregated; children are pruned below maxDepth to bound the payload.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public GqlNodeStats tree(
+            @GraphQLName("path")
+            @GraphQLDescription("JCR path to compute (defaults to /)")
+            String path,
+
+            @GraphQLName("maxDepth")
+            @GraphQLDescription("Maximum number of child levels to include (default 6). Deeper sizes remain aggregated into their ancestors.")
+            Integer maxDepth) {
+        try {
+            final NodeStats stats = new JcrStatsComputer()
+                    .computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path);
+            final int depth = maxDepth == null ? DEFAULT_MAX_DEPTH : Math.max(0, maxDepth);
+            return new GqlNodeStats(stats, depth);
+        } catch (RepositoryException e) {
+            LOGGER.error("Failed to build node tree for path {}", path, e);
+            return null;
+        }
+    }
+
+    @GraphQLField
     @GraphQLName("reports")
     @GraphQLDescription("Lists the generated flamegraph files stored under " + REPORTS_BASE_PATH)
     @GraphQLRequiresPermission("jcrStatsAdmin")
@@ -85,6 +110,47 @@ public class JcrStatsQuery {
         } catch (RepositoryException e) {
             LOGGER.error("Failed to list jcr-stats reports", e);
             return Collections.emptyList();
+        }
+    }
+
+    @GraphQLName("JcrStatsNode")
+    @GraphQLDescription("A node in the size-weighted JCR tree (recursive). Maps onto react-flame-graph's {name, value, children}.")
+    public static class GqlNodeStats {
+
+        private final String name;
+        private final long size;
+        private final List<GqlNodeStats> children;
+
+        public GqlNodeStats(NodeStats stats, int remainingDepth) {
+            this.name = stats.getName();
+            this.size = stats.getSize();
+            this.children = new ArrayList<>();
+            if (remainingDepth > 0) {
+                for (NodeStats child : stats.getSubNodeStats()) {
+                    children.add(new GqlNodeStats(child, remainingDepth - 1));
+                }
+            }
+        }
+
+        @GraphQLField
+        @GraphQLName("name")
+        @GraphQLDescription("Node name (last path segment, or ROOT)")
+        public String getName() {
+            return name;
+        }
+
+        @GraphQLField
+        @GraphQLName("size")
+        @GraphQLDescription("Aggregated size of this node and all its descendants, in bytes")
+        public long getSize() {
+            return size;
+        }
+
+        @GraphQLField
+        @GraphQLName("children")
+        @GraphQLDescription("Child nodes, size-descending; empty once maxDepth is reached")
+        public List<GqlNodeStats> getChildren() {
+            return children;
         }
     }
 

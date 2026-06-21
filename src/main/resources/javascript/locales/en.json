@@ -14,6 +14,8 @@
     "nodeCount": "Node count",
     "flamegraph": "Flamegraph",
     "openNewTab": "Open flamegraph in a new tab",
+    "interactiveTitle": "Interactive flamegraph",
+    "htmlReportTitle": "Generated HTML report",
     "reportsTitle": "Generated reports"
   }
 }

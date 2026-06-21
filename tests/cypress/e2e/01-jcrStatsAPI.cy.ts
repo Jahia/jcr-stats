@@ -8,6 +8,8 @@ describe('JCR Stats - GraphQL API', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const getSize: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getSize.graphql');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const getTree: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getTree.graphql');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const getReports: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getReports.graphql');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const computeSize: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/computeSize.graphql');
@@ -38,6 +40,26 @@ describe('JCR Stats - GraphQL API', () => {
                 .its('data.jcrStats.size')
                 .should((size: number) => {
                     expect(Number(size)).to.eq(-1);
+                });
+        });
+    });
+
+    describe('jcrStats.tree', () => {
+        it('returns a size-weighted recursive tree for flamegraph rendering', () => {
+            cy.apollo({query: getTree, variables: {path: TEST_PATH, maxDepth: 3}})
+                .its('data.jcrStats.tree')
+                .should((tree: {name: string; size: number; children: unknown[]}) => {
+                    expect(tree.name).to.eq('systemsite');
+                    expect(Number(tree.size)).to.be.at.least(0);
+                    expect(tree.children).to.be.an('array');
+                });
+        });
+
+        it('prunes children beyond maxDepth (maxDepth 0 = root only)', () => {
+            cy.apollo({query: getTree, variables: {path: TEST_PATH, maxDepth: 0}})
+                .its('data.jcrStats.tree.children')
+                .should((children: unknown[]) => {
+                    expect(children).to.be.an('array').that.has.length(0);
                 });
         });
     });
