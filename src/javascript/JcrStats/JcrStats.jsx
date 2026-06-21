@@ -8,6 +8,8 @@ import {GET_TREE} from './JcrStats.gql';
 
 const DEFAULT_PATH = '/sites/systemsite';
 const MAX_DEPTH = 6;
+const METRIC_SIZE = 'size';
+const METRIC_NODES = 'nodes';
 const KIB = 1024;
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 // Gap left between the flamegraph and the bottom of the window.
@@ -27,18 +29,28 @@ const formatBytes = bytes => {
     return `${unitIndex === 0 ? value : value.toFixed(1)} ${UNITS[unitIndex]}`;
 };
 
-// Map the jcrStats.tree GraphQL shape onto react-flame-graph's {name, value, children}.
-// value is floored at 1 so zero-byte subtrees still render a frame instead of NaN widths.
-const toFlameNode = node => ({
-    name: node.name,
-    value: Math.max(Number(node.size), 1),
-    tooltip: `${node.name}: ${formatBytes(node.size)}`,
-    children: (node.children || []).map(toFlameNode)
-});
+// Map the jcrStats.tree shape onto react-flame-graph's {name, value, children}. The `value`
+// (frame width) is driven by the chosen metric — aggregated bytes or aggregated node count —
+// floored at 1 so zero-weight subtrees still render a frame. Both raw measures are kept on the
+// node (carried through on react-flame-graph's `.source`) for the caption/tooltip.
+const toFlameNode = (node, metric) => {
+    const bytes = Number(node.size);
+    const nodeCount = Number(node.nodeCount);
+    const weight = metric === METRIC_NODES ? nodeCount : bytes;
+    return {
+        name: node.name,
+        value: Math.max(weight, 1),
+        bytes,
+        nodeCount,
+        tooltip: `${node.name}: ${formatBytes(bytes)} · ${nodeCount} nodes`,
+        children: (node.children || []).map(child => toFlameNode(child, metric))
+    };
+};
 
 export const JcrStatsAdmin = () => {
     const {t} = useTranslation('jcr-stats');
     const [path, setPath] = useState(DEFAULT_PATH);
+    const [metric, setMetric] = useState(METRIC_SIZE);
     const [status, setStatus] = useState(null);
     const [focused, setFocused] = useState(null);
     const containerRef = useRef(null);
@@ -53,7 +65,12 @@ export const JcrStatsAdmin = () => {
 
     // Stable identity: react-flame-graph reacts to `data` changes, so a fresh object every
     // render (combined with the resize effect) would loop forever (React error #185).
-    const flameData = useMemo(() => (tree ? toFlameNode(tree) : null), [tree]);
+    const flameData = useMemo(() => (tree ? toFlameNode(tree, metric) : null), [tree, metric]);
+
+    // Format a measure according to the selected metric.
+    const describeMetric = useCallback((bytes, nodeCount) => (
+        metric === METRIC_NODES ? `${nodeCount} ${t('label.nodesUnit')}` : formatBytes(bytes)
+    ), [metric, t]);
 
     // Fit the flamegraph to the available width, and to the height between its own top edge
     // and the bottom of the window (so it never extends past the viewport bottom).
@@ -79,18 +96,28 @@ export const JcrStatsAdmin = () => {
     }, [flameData, measure]);
 
     // Clicking a frame zooms react-flame-graph and reports the focused node here.
+    // onChange receives the internal chart node; the original measures are on `.source`.
     const handleFocusChange = useCallback(node => {
         if (node) {
-            setFocused({name: node.name, value: node.value});
+            const source = node.source || node;
+            setFocused({name: source.name, bytes: source.bytes, nodeCount: source.nodeCount});
         }
     }, []);
+
+    const handleMetricChange = e => {
+        setMetric(e.target.value);
+        setFocused(null);
+    };
 
     const handleCompute = async () => {
         setStatus(null);
         setFocused(null);
         try {
-            await loadTree({variables: {path: path || '/', maxDepth: MAX_DEPTH}});
-            setStatus('success');
+            // useLazyQuery resolves with {data, error} rather than throwing on a GraphQL error
+            // (e.g. permission denied), so check for actual tree data instead of assuming success —
+            // otherwise a failed query leaves a blank panel with no feedback.
+            const result = await loadTree({variables: {path: path || '/', maxDepth: MAX_DEPTH}});
+            setStatus(result?.data?.jcrStats?.tree ? 'success' : 'error');
         } catch (_err) {
             setStatus('error');
         }
@@ -130,6 +157,16 @@ export const JcrStatsAdmin = () => {
                         }
                     }}
                 />
+                <label className={styles.js_label} htmlFor="jcrstats-metric">{t('label.metric')}</label>
+                <select
+                    id="jcrstats-metric"
+                    className={styles.js_select}
+                    value={metric}
+                    onChange={handleMetricChange}
+                >
+                    <option value={METRIC_SIZE}>{t('label.metricSize')}</option>
+                    <option value={METRIC_NODES}>{t('label.metricNodes')}</option>
+                </select>
                 <Button
                     size="big"
                     color="accent"
@@ -163,8 +200,8 @@ export const JcrStatsAdmin = () => {
                     </div>
                     <div data-testid="jcrstats-flamegraph-caption" className={styles.js_caption}>
                         {focused
-                            ? `${t('label.focused')}: ${focused.name} — ${formatBytes(focused.value)}`
-                            : `${tree.name} — ${formatBytes(tree.size)}`}
+                            ? `${t('label.focused')}: ${focused.name} — ${describeMetric(focused.bytes, focused.nodeCount)}`
+                            : `${tree.name} — ${describeMetric(tree.size, tree.nodeCount)}`}
                     </div>
                     <div ref={containerRef} data-testid="jcrstats-flamegraph-react" className={styles.js_flamegraph_react}>
                         <FlameGraph

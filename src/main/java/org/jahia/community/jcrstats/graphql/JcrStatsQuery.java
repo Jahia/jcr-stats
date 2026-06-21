@@ -53,9 +53,8 @@ public class JcrStatsQuery {
             @GraphQLDescription("JCR path to compute (defaults to /)")
             String path) {
         try {
-            final JcrStatsComputer computer = new JcrStatsComputer();
-            final NodeStats stats = computer.computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path);
-            return computer.countNodes(stats);
+            final NodeStats stats = new JcrStatsComputer().computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path);
+            return JcrStatsComputer.countNodes(stats);
         } catch (RepositoryException e) {
             LOGGER.error("Failed to count nodes for path {}", path, e);
             return -1L;
@@ -119,11 +118,13 @@ public class JcrStatsQuery {
 
         private final String name;
         private final long size;
+        private final long nodeCount;
         private final List<GqlNodeStats> children;
 
         public GqlNodeStats(NodeStats stats, int remainingDepth) {
             this.name = stats.getName();
             this.size = stats.getSize();
+            this.nodeCount = JcrStatsComputer.countNodes(stats);
             this.children = new ArrayList<>();
             if (remainingDepth > 0) {
                 for (NodeStats child : stats.getSubNodeStats()) {
@@ -144,6 +145,13 @@ public class JcrStatsQuery {
         @GraphQLDescription("Aggregated size of this node and all its descendants, in bytes")
         public long getSize() {
             return size;
+        }
+
+        @GraphQLField
+        @GraphQLName("nodeCount")
+        @GraphQLDescription("Total number of nodes in this subtree, root included")
+        public long getNodeCount() {
+            return nodeCount;
         }
 
         @GraphQLField

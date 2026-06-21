@@ -101,7 +101,7 @@ public class JcrStatsComputerTest {
 
     @Test
     public void countNodes_singleNode_returnsOne() {
-        assertThat(computer.countNodes(new NodeStats("/"))).isEqualTo(1L);
+        assertThat(JcrStatsComputer.countNodes(new NodeStats("/"))).isEqualTo(1L);
     }
 
     @Test
@@ -115,7 +115,7 @@ public class JcrStatsComputerTest {
         root.addSubNodeStats(childB);
 
         // root + alpha + beta + leaf = 4
-        assertThat(computer.countNodes(root)).isEqualTo(4L);
+        assertThat(JcrStatsComputer.countNodes(root)).isEqualTo(4L);
     }
 
     // --- helper ---

@@ -3,12 +3,15 @@ query getTree($path: String, $maxDepth: Int) {
         tree(path: $path, maxDepth: $maxDepth) {
             name
             size
+            nodeCount
             children {
                 name
                 size
+                nodeCount
                 children {
                     name
                     size
+                    nodeCount
                 }
             }
         }

@@ -48,9 +48,10 @@ describe('JCR Stats - GraphQL API', () => {
         it('returns a size-weighted recursive tree for flamegraph rendering', () => {
             cy.apollo({query: getTree, variables: {path: TEST_PATH, maxDepth: 3}})
                 .its('data.jcrStats.tree')
-                .should((tree: {name: string; size: number; children: unknown[]}) => {
+                .should((tree: {name: string; size: number; nodeCount: number; children: unknown[]}) => {
                     expect(tree.name).to.eq('systemsite');
                     expect(Number(tree.size)).to.be.at.least(0);
+                    expect(Number(tree.nodeCount)).to.be.at.least(1);
                     expect(tree.children).to.be.an('array');
                 });
         });

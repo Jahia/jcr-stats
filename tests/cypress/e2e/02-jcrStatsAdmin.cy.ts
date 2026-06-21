@@ -17,10 +17,10 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('#jcrstats-path').should('be.visible').and('have.value', '/sites/systemsite');
     });
 
-    it('shows the Compute size button', () => {
+    it('shows the metric selector defaulting to size', () => {
         cy.login();
         cy.visit(adminPath);
-        cy.contains('button', 'Compute size').should('be.visible');
+        cy.get('#jcrstats-metric').should('be.visible').and('have.value', 'size');
     });
 
     it('renders the interactive flamegraph directly in React (no HTML report)', () => {
@@ -40,12 +40,24 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('[data-testid="jcrstats-reports"]').should('not.exist');
     });
 
+    it('can weight the flamegraph by number of nodes', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.get('#jcrstats-metric').select('nodes');
+        cy.contains('button', 'Compute size').click();
+
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
+            .should('be.visible')
+            .and('contain', 'systemsite');
+        // The caption reports the node-count measure when weighting by nodes
+        cy.get('[data-testid="jcrstats-flamegraph-caption"]').should('contain', 'nodes');
+    });
+
     it('submits the form with Ctrl+Enter', () => {
         cy.login();
         cy.visit(adminPath);
         cy.get('#jcrstats-path').clear();
         cy.get('#jcrstats-path').type('/sites/systemsite');
-        // No button click — Ctrl+Enter in the path field triggers the computation
         cy.get('#jcrstats-path').type('{ctrl}{enter}');
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
             .should('be.visible')
@@ -67,7 +79,7 @@ describe('JCR Stats - Admin UI', () => {
         });
     });
 
-    it('reacts to clicking a flamegraph frame (focus/zoom)', () => {
+    it('reacts to clicking a flamegraph frame (focus shows the measure)', () => {
         cy.login();
         cy.visit(adminPath);
         cy.contains('button', 'Compute size').click();
@@ -75,10 +87,12 @@ describe('JCR Stats - Admin UI', () => {
             .should('be.visible')
             .and('contain', 'systemsite');
 
-        // Frames are SVG <rect>s; the text <div> has pointer-events:none, so a real click
-        // lands on the rect. Click by coordinate within the top row (rowHeight=20) to hit the
-        // root frame, then the caption reports the focused node.
+        // Frames are SVG <rect>s; the text <div> is pointer-events:none, so a real click lands
+        // on the rect. Click by coordinate within the top row (rowHeight=20) to hit the root.
         cy.get('[data-testid="jcrstats-flamegraph-react"]').click(80, 10);
-        cy.get('[data-testid="jcrstats-flamegraph-caption"]', {timeout: 10000}).should('contain', 'Focused');
+        // Caption shows "Focused: <name> — <measure>" with a numeric measure (size in default mode)
+        cy.get('[data-testid="jcrstats-flamegraph-caption"]', {timeout: 10000})
+            .invoke('text')
+            .should('match', /Focused:.*\d/);
     });
 });

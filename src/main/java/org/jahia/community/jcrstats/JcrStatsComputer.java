@@ -73,7 +73,7 @@ public class JcrStatsComputer {
     }
 
     /** Total number of nodes in the subtree, root included. */
-    public long countNodes(NodeStats nodeStats) {
+    public static long countNodes(NodeStats nodeStats) {
         long count = 1L;
         for (NodeStats subNodeStats : nodeStats.getSubNodeStats()) {
             count += countNodes(subNodeStats);

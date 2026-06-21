@@ -129,3 +129,30 @@
   font-size: 0.8125rem;
   color: var(--color-gray, #5c6370);
 }
+
+.js_select {
+  padding: 6px 10px;
+  border: 1px solid #767676;
+  border-radius: var(--radius, 4px);
+  font-size: 0.875rem;
+  font-family: 'Nunito Sans', sans-serif;
+  background: #ffffff;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent, #00a0e3);
+    outline-offset: 2px;
+    border-color: var(--color-accent, #00a0e3);
+  }
+}
+
+/* react-flame-graph animates every <rect>/<g>/<foreignObject> with `transition: all 200ms`
+   on each focus/zoom. Animating many SVG elements janks the click even on small trees, so
+   disable the transition — zoom/focus becomes instant. (Element selectors are global; the
+   leading local class scopes them to this widget.) */
+.js_flamegraph_react g,
+.js_flamegraph_react rect,
+.js_flamegraph_react foreignObject,
+.js_flamegraph_react foreignObject div {
+  transition: none !important;
+}
