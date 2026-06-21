@@ -156,3 +156,12 @@
 .js_flamegraph_react foreignObject div {
   transition: none !important;
 }
+
+.js_form {
+  flex-wrap: wrap;
+  max-width: none;
+}
+
+.js_hiddenInput {
+  display: none;
+}

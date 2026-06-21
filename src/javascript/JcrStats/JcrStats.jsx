@@ -15,9 +15,10 @@ const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 // Gap left between the flamegraph and the bottom of the window.
 const BOTTOM_MARGIN = 24;
 const MIN_HEIGHT = 320;
+const SAVE_FORMAT = 'jcr-stats-flamegraph';
 
 const formatBytes = bytes => {
-    if (bytes === null || bytes === undefined || bytes < 0) {
+    if (bytes === null || bytes === undefined || !Number.isFinite(Number(bytes)) || bytes < 0) {
         return '—';
     }
     let value = Number(bytes);
@@ -32,18 +33,19 @@ const formatBytes = bytes => {
 // Map the jcrStats.tree shape onto react-flame-graph's {name, value, children}. The `value`
 // (frame width) is driven by the chosen metric — aggregated bytes or aggregated node count —
 // floored at 1 so zero-weight subtrees still render a frame. Both raw measures are kept on the
-// node (carried through on react-flame-graph's `.source`) for the caption/tooltip.
+// node (carried through on react-flame-graph's `.source`) for the caption/tooltip. Values are
+// coerced defensively because the tree may come from an imported (untrusted) file.
 const toFlameNode = (node, metric) => {
-    const bytes = Number(node.size);
-    const nodeCount = Number(node.nodeCount);
+    const bytes = Number.isFinite(Number(node.size)) ? Number(node.size) : 0;
+    const nodeCount = Number.isFinite(Number(node.nodeCount)) ? Number(node.nodeCount) : 0;
     const weight = metric === METRIC_NODES ? nodeCount : bytes;
     return {
-        name: node.name,
+        name: typeof node.name === 'string' ? node.name : '(unknown)',
         value: Math.max(weight, 1),
         bytes,
         nodeCount,
         tooltip: `${node.name}: ${formatBytes(bytes)} · ${nodeCount} nodes`,
-        children: (node.children || []).map(child => toFlameNode(child, metric))
+        children: Array.isArray(node.children) ? node.children.map(child => toFlameNode(child, metric)) : []
     };
 };
 
@@ -53,15 +55,17 @@ export const JcrStatsAdmin = () => {
     const [metric, setMetric] = useState(METRIC_SIZE);
     const [status, setStatus] = useState(null);
     const [focused, setFocused] = useState(null);
+    const [tree, setTree] = useState(null);
+    const [treePath, setTreePath] = useState(DEFAULT_PATH);
     const containerRef = useRef(null);
+    const fileInputRef = useRef(null);
     const [dimensions, setDimensions] = useState({width: 900, height: 600});
 
     useEffect(() => {
         document.title = `${t('label.title')} — Jahia Administration`;
     }, [t]);
 
-    const [loadTree, {data: treeData, loading}] = useLazyQuery(GET_TREE, {fetchPolicy: 'network-only'});
-    const tree = treeData?.jcrStats?.tree || null;
+    const [loadTree, {loading}] = useLazyQuery(GET_TREE, {fetchPolicy: 'network-only'});
 
     // Stable identity: react-flame-graph reacts to `data` changes, so a fresh object every
     // render (combined with the resize effect) would loop forever (React error #185).
@@ -112,15 +116,79 @@ export const JcrStatsAdmin = () => {
     const handleCompute = async () => {
         setStatus(null);
         setFocused(null);
+        const targetPath = path || '/';
         try {
-            // useLazyQuery resolves with {data, error} rather than throwing on a GraphQL error
-            // (e.g. permission denied), so check for actual tree data instead of assuming success —
-            // otherwise a failed query leaves a blank panel with no feedback.
-            const result = await loadTree({variables: {path: path || '/', maxDepth: MAX_DEPTH}});
-            setStatus(result?.data?.jcrStats?.tree ? 'success' : 'error');
+            const result = await loadTree({variables: {path: targetPath, maxDepth: MAX_DEPTH}});
+            const computed = result?.data?.jcrStats?.tree;
+            if (computed) {
+                setTree(computed);
+                setTreePath(targetPath);
+                setStatus('success');
+            } else {
+                setStatus('error');
+            }
         } catch (_err) {
             setStatus('error');
         }
+    };
+
+    // Save the current tree to a JSON file for offline analysis / sharing.
+    const handleSave = () => {
+        if (!tree) {
+            return;
+        }
+        const payload = {
+            format: SAVE_FORMAT,
+            version: 1,
+            path: treePath,
+            maxDepth: MAX_DEPTH,
+            exportedAt: new Date().toISOString(),
+            tree
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const safePath = (treePath || 'root').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `jcr-stats-${safePath || 'root'}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleLoadClick = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
+    // Load a previously saved tree (accepts the {format, path, tree} envelope or a raw tree node).
+    const handleFileSelected = event => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = ''; // allow re-selecting the same file
+        if (!file) {
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const parsed = JSON.parse(reader.result);
+                const loaded = parsed && parsed.tree ? parsed.tree : parsed;
+                if (!loaded || typeof loaded.name !== 'string' || loaded.size === undefined) {
+                    setStatus('error');
+                    return;
+                }
+                setFocused(null);
+                setTreePath((parsed && parsed.path) || loaded.name);
+                setTree(loaded);
+                setStatus('success');
+            } catch (_err) {
+                setStatus('error');
+            }
+        };
+        reader.onerror = () => setStatus('error');
+        reader.readAsText(file);
     };
 
     return (
@@ -174,6 +242,20 @@ export const JcrStatsAdmin = () => {
                     isDisabled={loading}
                     onClick={handleCompute}
                 />
+                <Button
+                    size="big"
+                    label={t('label.load')}
+                    onClick={handleLoadClick}
+                />
+                <input
+                    ref={fileInputRef}
+                    id="jcrstats-load-input"
+                    data-testid="jcrstats-load-input"
+                    type="file"
+                    accept="application/json,.json"
+                    className={styles.js_hiddenInput}
+                    onChange={handleFileSelected}
+                />
             </div>
 
             {loading && (
@@ -189,7 +271,7 @@ export const JcrStatsAdmin = () => {
                 </div>
             )}
 
-            {/* Interactive, in-app flamegraph rendered directly in React from jcrStats.tree */}
+            {/* Interactive, in-app flamegraph rendered directly in React from the tree data */}
             {flameData && (
                 <div className={styles.js_interactive}>
                     <div className={styles.js_interactive_head}>
@@ -197,6 +279,11 @@ export const JcrStatsAdmin = () => {
                             {t('label.interactiveTitle')}
                         </Typography>
                         <Typography className={styles.js_hint}>{t('label.clickHint')}</Typography>
+                        <Button
+                            size="default"
+                            label={t('label.save')}
+                            onClick={handleSave}
+                        />
                     </div>
                     <div data-testid="jcrstats-flamegraph-caption" className={styles.js_caption}>
                         {focused

@@ -95,4 +95,23 @@ describe('JCR Stats - Admin UI', () => {
             .invoke('text')
             .should('match', /Focused:.*\d/);
     });
+    it('loads a saved flamegraph from a file (no recompute)', () => {
+        cy.login();
+        cy.visit(adminPath);
+        // Import a saved file directly — no Compute needed
+        cy.get('[data-testid="jcrstats-load-input"]').selectFile('cypress/fixtures/sample-flamegraph.json', {force: true});
+
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 30000})
+            .should('be.visible')
+            .and('contain', 'loaded-sample');
+        cy.get('[data-testid="jcrstats-flamegraph-caption"]').should('contain', 'loaded-sample');
+    });
+
+    it('offers a Save data button once a flamegraph is shown', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains('button', 'Compute size').click();
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
+        cy.contains('button', 'Save data').should('be.visible');
+    });
 });
