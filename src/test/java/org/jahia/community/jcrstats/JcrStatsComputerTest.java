@@ -9,17 +9,17 @@ import java.io.StringWriter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for the graph-writing logic in {@link ComputeSizeCommand}.
+ * Unit tests for the graph-writing and counting logic in {@link JcrStatsComputer}.
  * No live JCR session or JCRTemplate is required — writeGraphNode is package-private
  * precisely to enable this kind of lightweight unit testing.
  */
-public class ComputeSizeCommandTest {
+public class JcrStatsComputerTest {
 
-    private ComputeSizeCommand command;
+    private JcrStatsComputer computer;
 
     @Before
     public void setUp() {
-        command = new ComputeSizeCommand();
+        computer = new JcrStatsComputer();
     }
 
     @Test
@@ -97,12 +97,33 @@ public class ComputeSizeCommandTest {
         assertThat(lines[2]).isEqualTo("f(1,400,100,0,\"beta\")");
     }
 
+    // --- countNodes ---
+
+    @Test
+    public void countNodes_singleNode_returnsOne() {
+        assertThat(computer.countNodes(new NodeStats("/"))).isEqualTo(1L);
+    }
+
+    @Test
+    public void countNodes_treeWithNestedChildren_countsAllNodes() {
+        NodeStats root = new NodeStats("/");
+        NodeStats childA = new NodeStats("/alpha");
+        NodeStats childB = new NodeStats("/beta");
+        NodeStats grandChild = new NodeStats("/alpha/leaf");
+        childA.addSubNodeStats(grandChild);
+        root.addSubNodeStats(childA);
+        root.addSubNodeStats(childB);
+
+        // root + alpha + beta + leaf = 4
+        assertThat(computer.countNodes(root)).isEqualTo(4L);
+    }
+
     // --- helper ---
 
     private String invokeWriteGraphNode(NodeStats nodeStats, int level, long startPosition) throws Exception {
         StringWriter sw = new StringWriter();
         try (BufferedWriter bw = new BufferedWriter(sw)) {
-            command.writeGraphNode(nodeStats, bw, level, startPosition);
+            computer.writeGraphNode(nodeStats, bw, level, startPosition);
         }
         return sw.toString();
     }

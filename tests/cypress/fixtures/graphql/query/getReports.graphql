@@ -1,0 +1,8 @@
+query getReports {
+    jcrStats {
+        reports {
+            path
+            name
+        }
+    }
+}

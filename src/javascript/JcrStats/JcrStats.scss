@@ -1,0 +1,113 @@
+.js_sr_only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.js_container {
+  font-family: 'Nunito Sans', sans-serif;
+  color: var(--color-dark, #131c21);
+  max-width: 720px;
+  padding: var(--spacing-large, 24px);
+}
+
+.js_header h2 {
+  margin: 0 0 0 1.5625rem;
+  padding: 0;
+  font-size: 1.5625rem;
+  line-height: 5.3125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.js_description {
+  margin-bottom: var(--spacing-large, 24px);
+  padding: var(--spacing-medium, 16px);
+  background: var(--color-light, #fdfdfd);
+  border-left: 3px solid var(--color-accent, #00a0e3);
+  border-radius: 0 var(--radius, 4px) var(--radius, 4px) 0;
+}
+
+.js_form {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-medium, 16px);
+  margin-bottom: var(--spacing-large, 24px);
+}
+
+.js_label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-dark, #131c21);
+}
+
+.js_input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #767676;
+  border-radius: var(--radius, 4px);
+  font-size: 0.875rem;
+  font-family: 'Nunito Sans', sans-serif;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent, #00a0e3);
+    outline-offset: 2px;
+    border-color: var(--color-accent, #00a0e3);
+  }
+}
+
+.js_running {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-medium, 16px);
+  padding: var(--spacing-medium, 16px) 0;
+  margin-bottom: var(--spacing-medium, 16px);
+}
+
+.js_running_text {
+  font-size: 0.875rem;
+  color: var(--color-gray, #5c6370);
+}
+
+.js_alert {
+  padding: var(--spacing-small, 8px) var(--spacing-medium, 16px);
+  border-radius: var(--radius, 4px);
+  font-size: 0.8125rem;
+  margin-bottom: var(--spacing-medium, 16px);
+  border: 1px solid transparent;
+
+  &--error {
+    background: #fdecea;
+    border-color: var(--color-danger, #f44053);
+    color: var(--color-danger_dark, #840d0f);
+  }
+}
+
+.js_result {
+  margin-bottom: var(--spacing-large, 24px);
+  padding: var(--spacing-medium, 16px);
+  background: var(--color-light, #fdfdfd);
+  border-radius: var(--radius, 4px);
+
+  ul {
+    margin: var(--spacing-small, 8px) 0 0;
+    padding-left: 1.25rem;
+  }
+}
+
+.js_reports {
+  ul {
+    margin: var(--spacing-small, 8px) 0 0;
+    padding-left: 1.25rem;
+    font-size: 0.8125rem;
+    color: var(--color-gray, #5c6370);
+    word-break: break-all;
+  }
+}

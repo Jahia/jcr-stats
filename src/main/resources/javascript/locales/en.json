@@ -1,0 +1,18 @@
+{
+  "label": {
+    "menu_entry": "JCR Statistics",
+    "menu_execution": "Compute size",
+    "title": "JCR Statistics",
+    "description": "Compute the size of a JCR subtree and generate a flamegraph report stored in the JCR under /sites/systemsite/files/jcr-stats. The same computation is available as the jcr-stats:compute-size Karaf command and the jcrStats GraphQL API.",
+    "path": "Path",
+    "compute": "Compute size",
+    "computing": "Computing…",
+    "success": "Computation completed successfully.",
+    "error": "An error occurred. Check server logs for details.",
+    "resultTitle": "Result",
+    "totalSize": "Total size",
+    "nodeCount": "Node count",
+    "flamegraph": "Flamegraph",
+    "reportsTitle": "Generated reports"
+  }
+}

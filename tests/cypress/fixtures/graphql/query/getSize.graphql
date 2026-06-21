@@ -1,0 +1,6 @@
+query getSize($path: String) {
+    jcrStats {
+        size(path: $path)
+        nodeCount(path: $path)
+    }
+}

@@ -1,3 +1,4 @@
+/.claude
 /.classpath
 /.project
 /.settings
@@ -5,5 +6,21 @@
 *.iml
 *.ipr
 target
-release.properties
-pom.xml.releaseBackup
+/nbactions.xml
+
+/pom.xml.tag
+/release.properties
+/pom.xml.releaseBackup
+/pom.xml.next
+
+# Node / frontend build
+node_modules
+node
+yarn-error.log
+.yarn-integrity
+# Webpack chunks (only the main bundle is committed)
+src/main/resources/javascript/apps
+
+.env
+**/install-state.gz
+.codegraph

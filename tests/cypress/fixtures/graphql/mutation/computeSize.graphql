@@ -1,0 +1,10 @@
+mutation computeSize($path: String, $deleteTemporaryFile: Boolean) {
+    jcrStats {
+        computeSize(path: $path, deleteTemporaryFile: $deleteTemporaryFile) {
+            path
+            totalSize
+            nodeCount
+            flamegraphPath
+        }
+    }
+}
