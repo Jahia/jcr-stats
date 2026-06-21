@@ -1,16 +1,18 @@
-import React, {useState, useRef, useEffect} from 'react';
-import {useMutation, useQuery, useLazyQuery} from '@apollo/client';
+import React, {useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo} from 'react';
+import {useLazyQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {COMPUTE_SIZE, GET_REPORTS, GET_TREE} from './JcrStats.gql';
+import {GET_TREE} from './JcrStats.gql';
 
 const DEFAULT_PATH = '/sites/systemsite';
 const MAX_DEPTH = 6;
-const FLAMEGRAPH_HEIGHT = 500;
 const KIB = 1024;
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
+// Vertical space taken by the header + description + form above the flamegraph.
+const HEIGHT_OFFSET = 260;
+const MIN_HEIGHT = 320;
 
 const formatBytes = bytes => {
     if (bytes === null || bytes === undefined || bytes < 0) {
@@ -26,7 +28,7 @@ const formatBytes = bytes => {
 };
 
 // Map the jcrStats.tree GraphQL shape onto react-flame-graph's {name, value, children}.
-// value is floored at 1 so zero-byte subtrees still render a (degenerate) frame instead of NaN widths.
+// value is floored at 1 so zero-byte subtrees still render a frame instead of NaN widths.
 const toFlameNode = node => ({
     name: node.name,
     value: Math.max(Number(node.size), 1),
@@ -37,51 +39,47 @@ const toFlameNode = node => ({
 export const JcrStatsAdmin = () => {
     const {t} = useTranslation('jcr-stats');
     const [path, setPath] = useState(DEFAULT_PATH);
-    const [result, setResult] = useState(null);
     const [status, setStatus] = useState(null);
-    const flameRef = useRef(null);
-    const [flameWidth, setFlameWidth] = useState(900);
+    const containerRef = useRef(null);
+    const [dimensions, setDimensions] = useState({width: 900, height: 600});
 
     useEffect(() => {
         document.title = `${t('label.title')} — Jahia Administration`;
     }, [t]);
 
-    const {data: reportsData, refetch: refetchReports} = useQuery(GET_REPORTS, {fetchPolicy: 'network-only'});
-    const [computeSize, {loading}] = useMutation(COMPUTE_SIZE);
-    const [loadTree, {data: treeData}] = useLazyQuery(GET_TREE, {fetchPolicy: 'network-only'});
+    const [loadTree, {data: treeData, loading}] = useLazyQuery(GET_TREE, {fetchPolicy: 'network-only'});
+    const tree = treeData?.jcrStats?.tree || null;
 
-    const flameData = treeData?.jcrStats?.tree ? toFlameNode(treeData.jcrStats.tree) : null;
+    // Stable identity: react-flame-graph reacts to `data` changes, so a fresh object every
+    // render (combined with the resize effect) would loop forever (React error #185).
+    const flameData = useMemo(() => (tree ? toFlameNode(tree) : null), [tree]);
 
-    // Size the flamegraph to its container width once the data (and therefore the panel) is present.
-    useEffect(() => {
-        if (flameData && flameRef.current) {
-            const width = flameRef.current.clientWidth;
-            if (width > 0) {
-                setFlameWidth(width);
-            }
+    // Fit the flamegraph to the available width (its container) and the window height.
+    const measure = useCallback(() => {
+        const width = containerRef.current ? containerRef.current.clientWidth : 0;
+        const height = Math.max(MIN_HEIGHT, window.innerHeight - HEIGHT_OFFSET);
+        const nextWidth = width > 0 ? width : window.innerWidth;
+        setDimensions(prev => (prev.width === nextWidth && prev.height === height ? prev : {width: nextWidth, height}));
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!flameData) {
+            return undefined;
         }
-    }, [flameData]);
+        measure();
+        window.addEventListener('resize', measure);
+        return () => window.removeEventListener('resize', measure);
+    }, [flameData, measure]);
 
     const handleCompute = async () => {
         setStatus(null);
         try {
-            const targetPath = path || '/';
-            const response = await computeSize({variables: {path: targetPath, deleteTemporaryFile: false}});
-            const data = response.data?.jcrStats?.computeSize;
-            if (data) {
-                setResult(data);
-                setStatus('success');
-                refetchReports();
-                loadTree({variables: {path: targetPath, maxDepth: MAX_DEPTH}});
-            } else {
-                setStatus('error');
-            }
+            await loadTree({variables: {path: path || '/', maxDepth: MAX_DEPTH}});
+            setStatus('success');
         } catch (_err) {
             setStatus('error');
         }
     };
-
-    const reports = reportsData?.jcrStats?.reports || [];
 
     return (
         <div className={styles.js_container}>
@@ -132,65 +130,20 @@ export const JcrStatsAdmin = () => {
                 </div>
             )}
 
-            {status === 'success' && result && (
-                <div data-testid="jcrstats-result" className={styles.js_result}>
-                    <Typography weight="bold">{t('label.resultTitle')}</Typography>
-                    <ul>
-                        <li>{t('label.path')}: <span data-testid="jcrstats-result-path">{result.path}</span></li>
-                        <li>
-                            {t('label.totalSize')}: <span data-testid="jcrstats-result-size">{formatBytes(result.totalSize)}</span>
-                            {' '}(<span data-testid="jcrstats-result-bytes">{result.totalSize}</span> B)
-                        </li>
-                        <li>{t('label.nodeCount')}: <span data-testid="jcrstats-result-count">{result.nodeCount}</span></li>
-                        <li>{t('label.flamegraph')}: <span data-testid="jcrstats-result-flamegraph">{result.flamegraphPath}</span></li>
-                    </ul>
-                </div>
-            )}
-
-            {/* Interactive, in-app flamegraph rendered directly in React from the jcrStats.tree data */}
+            {/* Interactive, in-app flamegraph rendered directly in React from jcrStats.tree */}
             {flameData && (
                 <div className={styles.js_interactive}>
                     <Typography weight="bold" className={styles.js_interactive_title}>
                         {t('label.interactiveTitle')}
                     </Typography>
-                    <div ref={flameRef} data-testid="jcrstats-flamegraph-react" className={styles.js_flamegraph_react}>
-                        <FlameGraph data={flameData} height={FLAMEGRAPH_HEIGHT} width={flameWidth}/>
+                    <div data-testid="jcrstats-flamegraph-caption" className={styles.js_caption}>
+                        {tree.name} — {formatBytes(tree.size)}
+                    </div>
+                    <div ref={containerRef} data-testid="jcrstats-flamegraph-react" className={styles.js_flamegraph_react}>
+                        <FlameGraph data={flameData} height={dimensions.height} width={dimensions.width}/>
                     </div>
                 </div>
             )}
-
-            {/* Server-generated HTML report (the durable / Karaf-command artifact) */}
-            {status === 'success' && result && result.flamegraphUrl && (
-                <div className={styles.js_flamegraph}>
-                    <Typography weight="bold">{t('label.htmlReportTitle')}</Typography>
-                    <a
-                        data-testid="jcrstats-flamegraph-link"
-                        className={styles.js_flamegraph_link}
-                        href={result.flamegraphUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        {t('label.openNewTab')}
-                    </a>
-                    <iframe
-                        data-testid="jcrstats-flamegraph-frame"
-                        className={styles.js_flamegraph_frame}
-                        title={t('label.flamegraph')}
-                        src={result.flamegraphUrl}
-                    />
-                </div>
-            )}
-
-            <div className={styles.js_reports}>
-                <Typography weight="bold">{t('label.reportsTitle')}</Typography>
-                <ul data-testid="jcrstats-reports">
-                    {reports.map(report => (
-                        <li key={report.path}>
-                            <a href={report.url} target="_blank" rel="noopener noreferrer">{report.path}</a>
-                        </li>
-                    ))}
-                </ul>
-            </div>
         </div>
     );
 };
