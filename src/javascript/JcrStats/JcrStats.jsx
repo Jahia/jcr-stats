@@ -115,6 +115,26 @@ export const JcrStatsAdmin = () => {
                         <li>{t('label.nodeCount')}: <span data-testid="jcrstats-result-count">{result.nodeCount}</span></li>
                         <li>{t('label.flamegraph')}: <span data-testid="jcrstats-result-flamegraph">{result.flamegraphPath}</span></li>
                     </ul>
+
+                    {result.flamegraphUrl && (
+                        <div className={styles.js_flamegraph}>
+                            <a
+                                data-testid="jcrstats-flamegraph-link"
+                                className={styles.js_flamegraph_link}
+                                href={result.flamegraphUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {t('label.openNewTab')}
+                            </a>
+                            <iframe
+                                data-testid="jcrstats-flamegraph-frame"
+                                className={styles.js_flamegraph_frame}
+                                title={t('label.flamegraph')}
+                                src={result.flamegraphUrl}
+                            />
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -122,7 +142,9 @@ export const JcrStatsAdmin = () => {
                 <Typography weight="bold">{t('label.reportsTitle')}</Typography>
                 <ul data-testid="jcrstats-reports">
                     {reports.map(report => (
-                        <li key={report.path}>{report.path}</li>
+                        <li key={report.path}>
+                            <a href={report.url} target="_blank" rel="noopener noreferrer">{report.path}</a>
+                        </li>
                     ))}
                 </ul>
             </div>

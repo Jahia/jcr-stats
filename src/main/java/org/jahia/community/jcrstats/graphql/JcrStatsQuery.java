@@ -78,7 +78,7 @@ public class JcrStatsQuery {
                 final JCRNodeIteratorWrapper nodes = query.execute().getNodes();
                 while (nodes.hasNext()) {
                     final JCRNodeWrapper node = (JCRNodeWrapper) nodes.next();
-                    reports.add(new GqlJcrStatsReport(node.getPath(), node.getName()));
+                    reports.add(new GqlJcrStatsReport(node.getPath(), node.getName(), JcrStatsComputer.flamegraphUrl(node.getPath())));
                 }
                 return reports;
             });
@@ -94,10 +94,12 @@ public class JcrStatsQuery {
 
         private final String path;
         private final String name;
+        private final String url;
 
-        public GqlJcrStatsReport(String path, String name) {
+        public GqlJcrStatsReport(String path, String name, String url) {
             this.path = path;
             this.name = name;
+            this.url = url;
         }
 
         @GraphQLField
@@ -112,6 +114,13 @@ public class JcrStatsQuery {
         @GraphQLDescription("Name of the flamegraph file node")
         public String getName() {
             return name;
+        }
+
+        @GraphQLField
+        @GraphQLName("url")
+        @GraphQLDescription("Browser URL that renders this flamegraph")
+        public String getUrl() {
+            return url;
         }
     }
 }

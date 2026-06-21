@@ -8,6 +8,7 @@ export const COMPUTE_SIZE = gql`
                 totalSize
                 nodeCount
                 flamegraphPath
+                flamegraphUrl
             }
         }
     }
@@ -19,6 +20,7 @@ export const GET_REPORTS = gql`
             reports {
                 path
                 name
+                url
             }
         }
     }

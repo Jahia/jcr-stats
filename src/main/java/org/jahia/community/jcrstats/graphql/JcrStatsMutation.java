@@ -33,7 +33,8 @@ public class JcrStatsMutation {
             final ComputeResult result = new JcrStatsComputer()
                     .computeAndWriteFlamegraph(path, Boolean.TRUE.equals(deleteTemporaryFile));
             return new GqlJcrStatsComputeResult(
-                    result.getPath(), result.getTotalSize(), result.getNodeCount(), result.getFlamegraphPath());
+                    result.getPath(), result.getTotalSize(), result.getNodeCount(),
+                    result.getFlamegraphPath(), JcrStatsComputer.flamegraphUrl(result.getFlamegraphPath()));
         } catch (RepositoryException e) {
             LOGGER.error("Failed to compute size for path {}", path, e);
             return null;
@@ -48,12 +49,14 @@ public class JcrStatsMutation {
         private final long totalSize;
         private final long nodeCount;
         private final String flamegraphPath;
+        private final String flamegraphUrl;
 
-        public GqlJcrStatsComputeResult(String path, long totalSize, long nodeCount, String flamegraphPath) {
+        public GqlJcrStatsComputeResult(String path, long totalSize, long nodeCount, String flamegraphPath, String flamegraphUrl) {
             this.path = path;
             this.totalSize = totalSize;
             this.nodeCount = nodeCount;
             this.flamegraphPath = flamegraphPath;
+            this.flamegraphUrl = flamegraphUrl;
         }
 
         @GraphQLField
@@ -82,6 +85,13 @@ public class JcrStatsMutation {
         @GraphQLDescription("JCR path of the generated flamegraph file, or null when none was written")
         public String getFlamegraphPath() {
             return flamegraphPath;
+        }
+
+        @GraphQLField
+        @GraphQLName("flamegraphUrl")
+        @GraphQLDescription("Browser URL that renders the generated flamegraph, or null when none was written")
+        public String getFlamegraphUrl() {
+            return flamegraphUrl;
         }
     }
 }

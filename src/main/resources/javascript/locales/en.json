@@ -13,6 +13,7 @@
     "totalSize": "Total size",
     "nodeCount": "Node count",
     "flamegraph": "Flamegraph",
+    "openNewTab": "Open flamegraph in a new tab",
     "reportsTitle": "Generated reports"
   }
 }

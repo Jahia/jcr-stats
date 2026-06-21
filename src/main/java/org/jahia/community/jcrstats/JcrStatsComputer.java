@@ -81,6 +81,17 @@ public class JcrStatsComputer {
         return count;
     }
 
+    /** URL prefix under which JCR files in the default (edit) workspace are served by Jahia. */
+    public static final String DEFAULT_WORKSPACE_FILES_PREFIX = "/files/" + Constants.EDIT_WORKSPACE;
+
+    /**
+     * Builds the browser URL that renders the given flamegraph file (served by the Jahia file
+     * servlet), or {@code null} when no flamegraph was written.
+     */
+    public static String flamegraphUrl(String flamegraphPath) {
+        return flamegraphPath == null ? null : DEFAULT_WORKSPACE_FILES_PREFIX + flamegraphPath;
+    }
+
     private String writeGraphFile(NodeStats nodeStats, boolean deleteTemporaryFile) {
         Path graphPath = null;
         try {

@@ -3,6 +3,7 @@ query getReports {
         reports {
             path
             name
+            url
         }
     }
 }

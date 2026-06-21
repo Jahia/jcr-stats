@@ -5,6 +5,7 @@ mutation computeSize($path: String, $deleteTemporaryFile: Boolean) {
             totalSize
             nodeCount
             flamegraphPath
+            flamegraphUrl
         }
     }
 }
