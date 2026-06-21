@@ -42,15 +42,20 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('[data-testid="jcrstats-reports"]').should('not.exist');
     });
 
-    it('sizes the flamegraph to the available width (responsive, not a tiny fixed box)', () => {
+    it('sizes the flamegraph to the viewport: full-width and not past the window bottom', () => {
         cy.login();
         cy.visit(adminPath);
         cy.contains('button', 'Compute size').click();
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
 
-        // It should fill most of the viewport width rather than a small fixed size.
         cy.window().then(win => {
-            cy.get('[data-testid="jcrstats-flamegraph-react"]').invoke('outerWidth').should('be.greaterThan', win.innerWidth * 0.5);
+            cy.get('[data-testid="jcrstats-flamegraph-react"]').then($el => {
+                const rect = $el[0].getBoundingClientRect();
+                // Fills most of the viewport width...
+                expect(rect.width, 'flamegraph width').to.be.greaterThan(win.innerWidth * 0.5);
+                // ...and its bottom stays within the window (allow a few px for borders/rounding)
+                expect(rect.bottom, 'flamegraph bottom vs window').to.be.at.most(win.innerHeight + 4);
+            });
         });
     });
 });

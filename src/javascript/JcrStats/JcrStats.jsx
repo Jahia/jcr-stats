@@ -10,8 +10,8 @@ const DEFAULT_PATH = '/sites/systemsite';
 const MAX_DEPTH = 6;
 const KIB = 1024;
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
-// Vertical space taken by the header + description + form above the flamegraph.
-const HEIGHT_OFFSET = 260;
+// Gap left between the flamegraph and the bottom of the window.
+const BOTTOM_MARGIN = 24;
 const MIN_HEIGHT = 320;
 
 const formatBytes = bytes => {
@@ -54,12 +54,18 @@ export const JcrStatsAdmin = () => {
     // render (combined with the resize effect) would loop forever (React error #185).
     const flameData = useMemo(() => (tree ? toFlameNode(tree) : null), [tree]);
 
-    // Fit the flamegraph to the available width (its container) and the window height.
+    // Fit the flamegraph to the available width, and to the height between its own top edge
+    // and the bottom of the window (so it never extends past the viewport bottom).
     const measure = useCallback(() => {
-        const width = containerRef.current ? containerRef.current.clientWidth : 0;
-        const height = Math.max(MIN_HEIGHT, window.innerHeight - HEIGHT_OFFSET);
+        const el = containerRef.current;
+        if (!el) {
+            return;
+        }
+        const {top} = el.getBoundingClientRect();
+        const width = el.clientWidth;
         const nextWidth = width > 0 ? width : window.innerWidth;
-        setDimensions(prev => (prev.width === nextWidth && prev.height === height ? prev : {width: nextWidth, height}));
+        const nextHeight = Math.max(MIN_HEIGHT, Math.floor(window.innerHeight - top - BOTTOM_MARGIN));
+        setDimensions(prev => (prev.width === nextWidth && prev.height === nextHeight ? prev : {width: nextWidth, height: nextHeight}));
     }, []);
 
     useLayoutEffect(() => {
