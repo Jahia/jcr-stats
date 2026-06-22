@@ -64,13 +64,18 @@ export const buildJContentUrl = (path, language = 'en') => {
     }
 
     const site = match[1];
-    const rest = (match[2] || '')
+    const segments = (match[2] || '')
         .split('/')
         .filter(Boolean)
-        .filter(segment => segment !== '..')
-        .map(encodeURIComponent)
-        .join('/');
-    const base = `/jahia/jcontent/${encodeURIComponent(site)}/${language}/content-folders`;
+        .filter(segment => segment !== '..');
+    // The jContent section depends on where the node lives under the site:
+    // files -> Media, contents -> Content folders, anything else (the page tree) -> Pages.
+    const root = segments[0];
+    const section = root === 'files' ? 'media' :
+        root === 'contents' ? 'content-folders' :
+            root ? 'pages' : 'content-folders';
+    const rest = segments.map(encodeURIComponent).join('/');
+    const base = `/jahia/jcontent/${encodeURIComponent(site)}/${language}/${section}`;
     return rest ? `${base}/${rest}` : base;
 };
 

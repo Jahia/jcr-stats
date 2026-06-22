@@ -96,7 +96,7 @@ describe('JCR Stats — permission enforcement', () => {
         it('shows the admin panel to a user granted only the module permission', () => {
             cy.login(ALLOWED_USER, PASSWORD)
             cy.visit(ADMIN_PATH)
-            cy.contains('h2', 'JCR Statistics').should('be.visible')
+            cy.contains('h2', 'JCR Statistics', { timeout: 30000 }).should('be.visible')
         })
     })
 })

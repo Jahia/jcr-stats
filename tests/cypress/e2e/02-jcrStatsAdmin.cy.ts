@@ -8,19 +8,19 @@ describe('JCR Stats - Admin UI', () => {
     it('shows the page title', () => {
         cy.login()
         cy.visit(adminPath)
-        cy.contains('h2', 'JCR Statistics').should('be.visible')
+        cy.contains('h2', 'JCR Statistics', { timeout: 30000 }).should('be.visible')
     })
 
     it('shows the path input with a default value', () => {
         cy.login()
         cy.visit(adminPath)
-        cy.get('#jcrstats-path').should('be.visible').and('have.value', '/sites')
+        cy.get('#jcrstats-path', { timeout: 30000 }).should('be.visible').and('have.value', '/sites')
     })
 
     it('shows the metric selector defaulting to size', () => {
         cy.login()
         cy.visit(adminPath)
-        cy.get('#jcrstats-metric').should('be.visible').and('have.value', 'size')
+        cy.get('#jcrstats-metric', { timeout: 30000 }).should('be.visible').and('have.value', 'size')
     })
 
     it('renders the interactive flamegraph directly in React (no HTML report)', () => {

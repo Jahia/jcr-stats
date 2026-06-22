@@ -210,28 +210,40 @@ describe('buildJContentUrl', () => {
         );
     });
 
+    it('uses the media section for files paths', () => {
+        expect(buildJContentUrl('/sites/digitall/files/images/slides')).toBe(
+            '/jahia/jcontent/digitall/en/media/files/images/slides'
+        );
+    });
+
+    it('uses the pages section for page-tree paths', () => {
+        expect(buildJContentUrl('/sites/digitall/home/about')).toBe(
+            '/jahia/jcontent/digitall/en/pages/home/about'
+        );
+    });
+
     it('encodes a path segment containing a space', () => {
         expect(buildJContentUrl('/sites/mySite/my folder')).toBe(
-            '/jahia/jcontent/mySite/en/content-folders/my%20folder'
+            '/jahia/jcontent/mySite/en/pages/my%20folder'
         );
     });
 
     it('encodes a path segment with special characters', () => {
         expect(buildJContentUrl('/sites/mySite/a&b')).toBe(
-            '/jahia/jcontent/mySite/en/content-folders/a%26b'
+            '/jahia/jcontent/mySite/en/pages/a%26b'
         );
     });
 
     it('respects a custom language parameter', () => {
         expect(buildJContentUrl('/sites/mySite/folder', 'fr')).toBe(
-            '/jahia/jcontent/mySite/fr/content-folders/folder'
+            '/jahia/jcontent/mySite/fr/pages/folder'
         );
     });
 
     it('strips .. traversal segments', () => {
         // BuildJContentUrl filters out '..' segments for safety
         expect(buildJContentUrl('/sites/mySite/../evil')).toBe(
-            '/jahia/jcontent/mySite/en/content-folders/evil'
+            '/jahia/jcontent/mySite/en/pages/evil'
         );
     });
 });
