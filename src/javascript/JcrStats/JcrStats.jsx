@@ -102,11 +102,12 @@ const handlePolledStatus = (current, ctx) => {
         return false;
     }
 
-    setters.setComputing(false);
     if (!current.hasResult) {
+        setters.stop(ERROR_COMPUTE);
         return false;
     }
 
+    setters.setComputing(false);
     applyComputedResult(fetchResult, current.path, {
         isCancelled,
         onResult: setters.onResult,
@@ -306,6 +307,10 @@ export const JcrStatsAdmin = () => {
             return undefined;
         }
 
+        if (!isMountedRef.current) {
+            return undefined;
+        }
+
         // C-2 (code-quality): cancellation is gated on actual unmount (isMountedRef), not on this
         // effect's teardown — completing the computation flips `computing` to false, which would
         // otherwise tear this effect down and cancel the result fetch we just kicked off.
@@ -483,6 +488,11 @@ export const JcrStatsAdmin = () => {
         reader.onload = () => {
             try {
                 const extracted = extractTree(JSON.parse(reader.result));
+                if (!extracted) {
+                    setStatus(errorStatus);
+                    return;
+                }
+
                 onTree(extracted);
             } catch (err) {
                 console.error('[jcr-stats] failed to read snapshot file', err);

@@ -279,7 +279,7 @@ public class JcrStatsComputer {
         // Defensive cap: abort cleanly before an over-broad path can exhaust the heap. The async
         // service records this as lastError; the synchronous GraphQL path catches it and returns a
         // sentinel (-1 / null). Generous ceiling, so legitimate traversals never hit it.
-        if (visited.incrementAndGet() > MAX_VISITED_NODES) {
+        if (visited.incrementAndGet() >= MAX_VISITED_NODES) {
             throw new RepositoryException("JCR stats traversal aborted: exceeded the maximum of "
                     + MAX_VISITED_NODES + " visited nodes (path too broad).");
         }

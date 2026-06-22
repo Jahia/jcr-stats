@@ -21,7 +21,7 @@ const hasForbiddenKeys = obj => Object.keys(obj).some(k => FORBIDDEN_KEYS.includ
 // Recursively validate a parsed tree node. Throws Error on the first violation so the caller
 // can surface a load error. Returns nothing; mutates a shared counter object for the node cap.
 const validateNode = (node, depth, counter) => {
-    if (depth > MAX_IMPORT_DEPTH) {
+    if (depth >= MAX_IMPORT_DEPTH) {
         throw new Error('tree exceeds maximum depth');
     }
 

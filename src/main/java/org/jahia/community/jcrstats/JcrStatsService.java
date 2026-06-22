@@ -48,9 +48,7 @@ public class JcrStatsService {
 
     @Deactivate
     public void deactivate() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
+        executor.shutdownNow();
     }
 
     /**
