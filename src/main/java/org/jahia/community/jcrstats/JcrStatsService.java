@@ -1,6 +1,5 @@
 package org.jahia.community.jcrstats;
 
-import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.slf4j.Logger;
@@ -11,6 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Runs JCR size computations asynchronously on a single background thread and caches the latest
@@ -29,28 +29,26 @@ public class JcrStatsService {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong visited = new AtomicLong();
-    private volatile NodeStats lastResult;
+    // S3077: NodeStats is a mutable object; an AtomicReference publishes it safely instead of a
+    // bare volatile field (volatile only guarantees visibility of the reference, not the object).
+    private final AtomicReference<NodeStats> lastResult = new AtomicReference<>();
     private volatile String lastPath;
     private volatile String lastError;
     private volatile long computedAt;
     private volatile long startedAt;
     private volatile long finishedAt;
-    private ExecutorService executor;
-
-    @Activate
-    public void activate() {
-        executor = Executors.newSingleThreadExecutor(runnable -> {
-            final Thread thread = new Thread(runnable, "jcr-stats-computation");
-            thread.setDaemon(true);
-            return thread;
-        });
-    }
+    // S3077: a volatile reference to a mutable ExecutorService is not thread-safe. Creating the
+    // single-threaded executor once at construction and holding it in a final field is the correct
+    // publication — final fields are safely visible to every thread without volatile.
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
+        final Thread thread = new Thread(runnable, "jcr-stats-computation");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     @Deactivate
     public void deactivate() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
+        executor.shutdownNow();
     }
 
     /**
@@ -69,7 +67,7 @@ public class JcrStatsService {
         executor.submit(() -> {
             try {
                 final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited);
-                lastResult = tree;
+                lastResult.set(tree);
                 lastPath = effectivePath;
                 computedAt = System.currentTimeMillis();
             } catch (RepositoryException | RuntimeException e) {
@@ -88,7 +86,7 @@ public class JcrStatsService {
     }
 
     public NodeStats getLastResult() {
-        return lastResult;
+        return lastResult.get();
     }
 
     public String getLastPath() {

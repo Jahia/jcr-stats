@@ -1,7 +1,8 @@
 import React from 'react';
 import {useTranslation} from 'react-i18next';
 import styles from './JcrStats.scss';
-import {formatBytes, measureOf, percent, flatten, buildJContentUrl} from './jcrStatsUtils';
+import {formatBytes, measureOf, percent, flatten} from './jcrStatsUtils';
+import {JContentLink} from './JContentLink';
 
 const TOP_N = 20;
 
@@ -29,32 +30,19 @@ export const TopList = ({tree, metric}) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {rows.map((row, index) => {
-                        const url = buildJContentUrl(row.path);
-                        return (
-                            <tr key={row.path || index}>
-                                <td>{index + 1}</td>
-                                <td>{row.name}</td>
-                                <td className={styles.js_path}>{row.path}</td>
-                                <td className={styles.js_num}>{formatBytes(row.size)}</td>
-                                <td className={styles.js_num}>{percent(measureOf(row, metric), total).toFixed(1)}%</td>
-                                <td className={styles.js_num}>{row.nodeCount}</td>
-                                <td>
-                                    {url && (
-                                        /* L-2: visible label already describes destination; opensNewTab appended */
-                                        <a
-                                            href={url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            aria-label={`${t('label.openJContent')} ${t('label.opensNewTab')}`}
-                                        >
-                                            {t('label.openJContent')}
-                                        </a>
-                                    )}
-                                </td>
-                            </tr>
-                        );
-                    })}
+                    {rows.map((row, index) => (
+                        <tr key={row.path || index}>
+                            <td>{index + 1}</td>
+                            <td>{row.name}</td>
+                            <td className={styles.js_path}>{row.path}</td>
+                            <td className={styles.js_num}>{formatBytes(row.size)}</td>
+                            <td className={styles.js_num}>{percent(measureOf(row, metric), total).toFixed(1)}%</td>
+                            <td className={styles.js_num}>{row.nodeCount}</td>
+                            <td>
+                                <JContentLink path={row.path}/>
+                            </td>
+                        </tr>
+                    ))}
                 </tbody>
             </table>
         </div>

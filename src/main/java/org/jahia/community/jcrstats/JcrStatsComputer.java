@@ -60,6 +60,13 @@ public class JcrStatsComputer {
     private static final int FLAMEGRAPH_STACK_DEPTH = 0;
 
     /**
+     * Defensive hard ceiling on the number of nodes a single traversal may visit. Guards against an
+     * over-broad path (or a pathological repository) exhausting the heap. The limit is intentionally
+     * generous — far beyond any legitimate subtree — so normal computations are unaffected.
+     */
+    private static final long MAX_VISITED_NODES = 5_000_000L;
+
+    /**
      * Computes the size statistics of the subtree rooted at {@code path} without writing anything.
      * Read-only: safe to call from a GraphQL query.
      */
@@ -235,7 +242,8 @@ public class JcrStatsComputer {
      * <p>Escapes: backslash, double-quote, {@code <}, {@code >}, {@code /},
      * CR, LF, U+2028 (LINE SEPARATOR), U+2029 (PARAGRAPH SEPARATOR).</p>
      */
-    private static String jsEscape(String value) {
+    // Package-private (was private) so XSS-escaping behaviour can be unit-tested directly.
+    static String jsEscape(String value) {
         if (value == null) {
             return "";
         }
@@ -251,10 +259,11 @@ public class JcrStatsComputer {
                 case '\r':  sb.append("\\u000D"); break;
                 case '\n':  sb.append("\\u000A"); break;
                 default:
-                    // U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR terminate JS lines
-                    if ((int) c == 0x2028) {
+                    // U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR terminate JS lines.
+                    // S1905: compare the char directly (char literals) instead of casting to int.
+                    if (c == '\u2028') {
                         sb.append("\\u2028");
-                    } else if ((int) c == 0x2029) {
+                    } else if (c == '\u2029') {
                         sb.append("\\u2029");
                     } else {
                         sb.append(c);
@@ -267,7 +276,13 @@ public class JcrStatsComputer {
 
     private NodeStats computeSize(JCRSessionWrapper session, String currentPath, AtomicLong visited) throws RepositoryException {
         session.refresh(false);
-        visited.incrementAndGet();
+        // Defensive cap: abort cleanly before an over-broad path can exhaust the heap. The async
+        // service records this as lastError; the synchronous GraphQL path catches it and returns a
+        // sentinel (-1 / null). Generous ceiling, so legitimate traversals never hit it.
+        if (visited.incrementAndGet() >= MAX_VISITED_NODES) {
+            throw new RepositoryException("JCR stats traversal aborted: exceeded the maximum of "
+                    + MAX_VISITED_NODES + " visited nodes (path too broad).");
+        }
         final NodeStats currentNodeStats = new NodeStats(currentPath);
         final QueryManagerWrapper manager = session.getWorkspace().getQueryManager();
         final String queryStmt = String.format("SELECT * FROM [%s] AS content WHERE ISCHILDNODE(content, '%s')", JcrConstants.NT_BASE, JCRContentUtils.sqlEncode(currentPath));

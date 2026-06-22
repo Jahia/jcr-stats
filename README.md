@@ -27,12 +27,18 @@ JCR Stats appears in **Jahia Administration** under **Server > System Health > J
 
 1. **Enter a JCR Path** (defaults to `/sites`)
 2. **Select "Weight by"** — either "Size" (bytes) or "Number of nodes"
-3. **Click "Compute"** (or press Ctrl+Enter) — initiates analysis
-4. **View Results in Four Tabs:**
-   - **Flamegraph** — Interactive, click to zoom in/out; hover for details
-   - **Tree table** — Scrollable, sortable hierarchy showing size, % of total, % of parent, node count
+3. **Click "Compute"** (or press Ctrl+Enter) — starts a background computation
+   - A progress indicator appears showing elapsed time and scanned-node count
+   - The computation runs on a single server-side background thread
+   - Only one computation runs at a time; clicking Compute while one is already running has no effect
+4. **When complete** — results appear automatically in the Flamegraph view
+5. **View Results in Four Tabs:**
+   - **Flamegraph** — Interactive, click to zoom in/out; hover for details (mouse-operated; keyboard users should use the Tree table)
+   - **Tree table** — Scrollable, sortable hierarchy showing size, % of total, % of parent, node count (keyboard accessible)
    - **Largest items** — Top-N nodes by selected metric
    - **Comparison** — Diff view against a previously saved baseline
+
+**Resume-on-Remount:** If you navigate away from the JCR Stats page while a computation is running and then return, the progress display resumes from the server's live status (elapsed time and visited count).
 
 ### UI Controls
 
@@ -147,6 +153,56 @@ Query variables:
 }
 ```
 
+#### `jcrStats.status(): JcrStatsStatus!`
+
+Returns the current status of any running or recently-completed asynchronous computation. Use this to poll while a computation is in progress.
+
+**Returns `JcrStatsStatus`:**
+- `running: Boolean!` — Whether a computation is currently in progress
+- `path: String` — JCR path of the last (or in-progress) computation (null if none yet)
+- `error: String` — Error message if the last computation failed (null on success)
+- `hasResult: Boolean!` — Whether a cached result is ready to fetch via `result()`
+- `startedAt: Long!` — Epoch milliseconds when the current/last computation started (0 if none yet)
+- `elapsedMs: Long!` — Elapsed time in milliseconds: live while running, otherwise the duration of the last run
+- `visitedCount: Long!` — Number of nodes visited so far (live progress; no total is known up front)
+
+```graphql
+query {
+  jcrStats {
+    status {
+      running
+      elapsedMs
+      visitedCount
+      hasResult
+      error
+    }
+  }
+}
+```
+
+#### `jcrStats.result(maxDepth: Int): JcrStatsNode`
+
+Returns the tree from the last asynchronous computation, pruned to `maxDepth`. Returns `null` if no result is available yet. Call this after `status()` reports `hasResult: true` and `running: false`.
+
+**Arguments:**
+- `maxDepth` (optional, default `6`) — Maximum child nesting depth
+
+**Returns `JcrStatsNode`:** (same structure as `tree()`)
+
+```graphql
+query {
+  jcrStats {
+    result(maxDepth: 6) {
+      name
+      path
+      size
+      nodeCount
+      children { ... }
+    }
+  }
+}
+```
+
 #### `jcrStats.reports(): [JcrStatsReport!]!`
 
 Lists all generated flamegraph files stored in `/sites/systemsite/files/jcr-stats`.
@@ -157,6 +213,52 @@ Lists all generated flamegraph files stored in `/sites/systemsite/files/jcr-stat
 - `url: String!` — Browser URL to view the flamegraph
 
 ### Mutations
+
+#### `jcrStats.compute(path: String): Boolean`
+
+Starts an asynchronous computation of the subtree at the given path. Returns `false` if a computation is already running (fire-and-forget, non-blocking). Poll `status()` to track progress, then read `result()` when the computation finishes.
+
+**Arguments:**
+- `path` (optional, default `/`) — JCR path to compute
+
+**Returns:** `Boolean!` — `true` if the job was started; `false` if one was already running
+
+```graphql
+mutation {
+  jcrStats {
+    compute(path: "/sites/digital")
+  }
+}
+```
+
+Response on success:
+```json
+{
+  "data": {
+    "jcrStats": {
+      "compute": true
+    }
+  }
+}
+```
+
+Response when a job is already running (no-op):
+```json
+{
+  "data": {
+    "jcrStats": {
+      "compute": false
+    }
+  }
+}
+```
+
+**Polling Pattern:**
+
+1. Call `compute(path)` → returns `true` (job started) or `false` (already running)
+2. Poll `status()` every 2–5 seconds; display `elapsedMs` and `visitedCount` in the UI
+3. When `status()` reports `running: false` and `hasResult: true`, call `result(maxDepth)` to fetch the tree
+4. Render the results
 
 #### `jcrStats.computeSize(path: String, deleteTemporaryFile: Boolean): JcrStatsComputeResult`
 
@@ -247,9 +349,15 @@ The flamegraph HTML is stored in the JCR at `/sites/systemsite/files/jcr-stats` 
 
 ## Security & Access Control
 
-### Permission: `jcrStatsAdmin`
+### Permission Model: Privileged System-Session Traversal
 
-All JCR Stats operations require the `jcrStatsAdmin` permission. This is a fine-grained admin permission that does not grant full server administration rights.
+**All JCR Stats operations require the `jcrStatsAdmin` permission.** This is a fine-grained admin permission that does not grant full server administration rights.
+
+**Important:** The `compute(path)` and `computeSize(path)` operations use a privileged system session (`JCRTemplate.doExecuteWithSystemSession`), which **bypasses node-level read ACLs**. This means that users with the `jcrStatsAdmin` permission can see the aggregated size and structure of any subtree in the JCR, regardless of per-node read permissions. This design is intentional—administrators must be able to understand the full storage footprint of the repository to manage space effectively.
+
+**When assigning the `jcr-stats-administrator` role, treat it as granting broad visibility into the entire JCR tree structure and size metrics.**
+
+### Permission: `jcrStatsAdmin`
 
 The permission is defined in `src/main/import/permissions.xml` and is checked via `@GraphQLRequiresPermission("jcrStatsAdmin")` on all GraphQL operations and at the admin UI entry point.
 
@@ -266,6 +374,18 @@ This role is defined in `src/main/import/roles.xml` with the description "Grants
 1. Navigate to **Jahia Administration > Users & Roles > Roles**
 2. Find or assign the `jcr-stats-administrator` role to a user or group
 3. The user can then access the JCR Stats admin UI and use all GraphQL operations
+
+---
+
+## Known Limitations
+
+- **Single-JVM Job Model** — The asynchronous computation runs on a single background thread per DX node. In a clustered DX deployment, the `status()` and `result()` queries may hit different cluster nodes, and status/result data is not synchronized across nodes. Plan accordingly if you are polling across a cluster.
+
+- **One Computation at a Time (Global)** — Only one `compute(path)` or `computeSize(path)` job runs on the entire server at any moment. Subsequent requests to start a computation while one is in progress are ignored (return `false` or `null`).
+
+- **Flamegraph is Mouse-Operated** — The interactive flamegraph visualization requires a mouse or touch device. Keyboard-only users should navigate using the **Tree table** view, which is fully keyboard accessible (arrow keys, Enter, Tab).
+
+- **Report Accumulation** — Generated flamegraph HTML files accumulate in `/sites/systemsite/files/jcr-stats` with no automatic retention policy. Administrators should periodically clean up old reports to manage storage.
 
 ---
 

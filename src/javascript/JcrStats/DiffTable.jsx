@@ -1,7 +1,8 @@
 import React from 'react';
 import {useTranslation} from 'react-i18next';
 import styles from './JcrStats.scss';
-import {formatBytes, signedBytes, diffTrees, buildJContentUrl} from './jcrStatsUtils';
+import {formatBytes, signedBytes, diffTrees} from './jcrStatsUtils';
+import {JContentLink} from './JContentLink';
 
 const TOP_N = 30;
 
@@ -29,7 +30,6 @@ export const DiffTable = ({baseline, current}) => {
                         <tr><td colSpan={6}>{t('label.diffNone')}</td></tr>
                     )}
                     {rows.map((row, index) => {
-                        const url = buildJContentUrl(row.path);
                         const grew = row.delta > 0;
                         return (
                             <tr key={row.path || index} className={grew ? styles.js_grew : styles.js_shrank}>
@@ -49,17 +49,7 @@ export const DiffTable = ({baseline, current}) => {
                                     {' '}{signedBytes(row.delta)}
                                 </td>
                                 <td>
-                                    {url && (
-                                        /* L-2: opensNewTab appended to aria-label */
-                                        <a
-                                            href={url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            aria-label={`${t('label.openJContent')} ${t('label.opensNewTab')}`}
-                                        >
-                                            {t('label.openJContent')}
-                                        </a>
-                                    )}
+                                    <JContentLink path={row.path}/>
                                 </td>
                             </tr>
                         );

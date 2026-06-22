@@ -31,9 +31,11 @@ public class ComputeSizeCommand implements Action {
     @Override
     public Object execute() throws RepositoryException {
         final ComputeResult result = new JcrStatsComputer().computeAndWriteFlamegraph(path, deleteTemporaryFile);
+        // S2629: pre-compute the display size so it is not formatted unconditionally inside the log call.
+        final String displaySize = FileUtils.byteCountToDisplaySize(result.getTotalSize());
         LOGGER.info("Computed {} node(s) under {} totalling {} (flamegraph: {})",
                 result.getNodeCount(), result.getPath(),
-                FileUtils.byteCountToDisplaySize(result.getTotalSize()), result.getFlamegraphPath());
+                displaySize, result.getFlamegraphPath());
         return null;
     }
 }

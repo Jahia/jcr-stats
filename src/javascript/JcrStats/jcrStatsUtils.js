@@ -4,6 +4,105 @@ const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 export const METRIC_SIZE = 'size';
 export const METRIC_NODES = 'nodes';
 
+// Export-format envelope written by the Save action; accepted (but not required) on import.
+export const SAVE_FORMAT = 'jcr-stats-flamegraph';
+
+// Security (H-1) caps for imported snapshot files. Generous so the shipped fixtures and
+// real exports (maxDepth 6, large repos) load fine, but bounded to reject hostile payloads.
+export const MAX_IMPORT_BYTES = 50 * 1024 * 1024; // 50 MB raw text
+export const MAX_IMPORT_DEPTH = 64; // Far beyond the maxDepth-6 export
+export const MAX_IMPORT_NODES = 2000000; // 2M nodes total
+
+const FORBIDDEN_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+// Reject prototype-pollution vectors: any object literal whose OWN keys include a forbidden name.
+const hasForbiddenKeys = obj => Object.keys(obj).some(k => FORBIDDEN_KEYS.includes(k));
+
+// Recursively validate a parsed tree node. Throws Error on the first violation so the caller
+// can surface a load error. Returns nothing; mutates a shared counter object for the node cap.
+const validateNode = (node, depth, counter) => {
+    if (depth >= MAX_IMPORT_DEPTH) {
+        throw new Error('tree exceeds maximum depth');
+    }
+
+    if (!node || typeof node !== 'object' || Array.isArray(node)) {
+        throw new Error('invalid tree node');
+    }
+
+    if (hasForbiddenKeys(node)) {
+        throw new Error('forbidden key in tree node');
+    }
+
+    counter.count += 1;
+    if (counter.count > MAX_IMPORT_NODES) {
+        throw new Error('tree exceeds maximum node count');
+    }
+
+    if (typeof node.name !== 'string') {
+        throw new Error('node name must be a string');
+    }
+
+    const size = Number(node.size);
+    if (!Number.isFinite(size) || size < 0) {
+        throw new Error('node size must be a finite non-negative number');
+    }
+
+    const nodeCount = Number(node.nodeCount);
+    if (!Number.isFinite(nodeCount) || nodeCount < 0) {
+        throw new Error('node nodeCount must be a finite non-negative number');
+    }
+
+    if (node.children !== undefined) {
+        if (!Array.isArray(node.children)) {
+            throw new Error('node children must be an array');
+        }
+
+        node.children.forEach(child => validateNode(child, depth + 1, counter));
+    }
+};
+
+// Validate + extract a tree from an imported file (export envelope or a raw tree node).
+// Throws Error on any structural / security violation; returns {tree, path} on success.
+export const extractTree = parsed => {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('not a valid snapshot');
+    }
+
+    if (hasForbiddenKeys(parsed)) {
+        throw new Error('forbidden key in snapshot');
+    }
+
+    // Back-compat: accept either an export envelope ({format, tree, path}) or a raw tree node.
+    const isEnvelope = parsed.tree && typeof parsed.tree === 'object';
+    if (isEnvelope && parsed.format !== undefined && parsed.format !== SAVE_FORMAT) {
+        throw new Error('unrecognized snapshot format');
+    }
+
+    const loaded = isEnvelope ? parsed.tree : parsed;
+    validateNode(loaded, 0, {count: 0});
+
+    const envelopePath = isEnvelope && typeof parsed.path === 'string' ? parsed.path : null;
+    return {tree: loaded, path: envelopePath || loaded.name};
+};
+
+// Map the jcrStats.tree shape onto react-flame-graph's {name, value, children}. The `value`
+// (frame width) follows the chosen metric, floored at 1 so zero-weight subtrees still render.
+// Raw measures + path are kept on the node (carried on react-flame-graph's `.source`).
+export const toFlameNode = (node, metric) => {
+    const bytes = Number.isFinite(Number(node.size)) ? Number(node.size) : 0;
+    const nodeCount = Number.isFinite(Number(node.nodeCount)) ? Number(node.nodeCount) : 0;
+    const weight = metric === METRIC_NODES ? nodeCount : bytes;
+    return {
+        name: typeof node.name === 'string' ? node.name : '(unknown)',
+        value: Math.max(weight, 1),
+        bytes,
+        nodeCount,
+        nodePath: node.path,
+        tooltip: `${node.name}: ${formatBytes(bytes)} · ${nodeCount} nodes`,
+        children: Array.isArray(node.children) ? node.children.map(child => toFlameNode(child, metric)) : []
+    };
+};
+
 export const formatBytes = bytes => {
     const n = Number(bytes);
     if (bytes === null || bytes === undefined || !Number.isFinite(n) || n < 0) {

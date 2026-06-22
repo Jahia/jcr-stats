@@ -1,7 +1,8 @@
 import React, {useState} from 'react';
 import {useTranslation} from 'react-i18next';
 import styles from './JcrStats.scss';
-import {formatBytes, measureOf, percent, buildJContentUrl} from './jcrStatsUtils';
+import {formatBytes, measureOf, percent} from './jcrStatsUtils';
+import {JContentLink} from './JContentLink';
 
 const INDENT_PX = 16;
 
@@ -11,7 +12,6 @@ const TreeRow = ({node, metric, total, parentMeasure, depth}) => {
     const children = node.children || [];
     const hasChildren = children.length > 0;
     const measure = measureOf(node, metric);
-    const url = buildJContentUrl(node.path);
 
     // H-1: aria-label for expand/collapse button includes node name (uses i18n interpolation)
     const toggleLabel = open ?
@@ -43,17 +43,7 @@ const TreeRow = ({node, metric, total, parentMeasure, depth}) => {
                 <td className={styles.js_num}>{percent(measure, parentMeasure).toFixed(1)}%</td>
                 <td className={styles.js_num}>{Number(node.nodeCount) || 0}</td>
                 <td>
-                    {url && (
-                        <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`${t('label.openJContent')} ${t('label.opensNewTab')}`}
-                        >
-                            {/* H-2: arrow glyph hidden from AT — full label on the <a> */}
-                            <span aria-hidden="true">↗</span>
-                        </a>
-                    )}
+                    <JContentLink path={node.path}/>
                 </td>
             </tr>
             {open && children.map(child => (

@@ -7,6 +7,7 @@ import org.jahia.community.jcrstats.JcrStatsComputer;
 import org.jahia.community.jcrstats.JcrStatsService;
 import org.jahia.community.jcrstats.NodeStats;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
+import org.jahia.services.content.JCRContentUtils;
 import org.jahia.services.content.JCRNodeIteratorWrapper;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRTemplate;
@@ -131,8 +132,11 @@ public class JcrStatsQuery {
                 if (!session.nodeExists(REPORTS_BASE_PATH)) {
                     return reports;
                 }
+                // sqlEncode the path for consistency/defense-in-depth (it is a constant today, so
+                // behaviour is unchanged — this guards against future changes making it dynamic).
                 final String stmt = String.format(
-                        "SELECT * FROM [jnt:file] AS report WHERE ISDESCENDANTNODE(report, '%s')", REPORTS_BASE_PATH);
+                        "SELECT * FROM [jnt:file] AS report WHERE ISDESCENDANTNODE(report, '%s')",
+                        JCRContentUtils.sqlEncode(REPORTS_BASE_PATH));
                 final QueryWrapper query = session.getWorkspace().getQueryManager().createQuery(stmt, Query.JCR_SQL2);
                 final JCRNodeIteratorWrapper nodes = query.execute().getNodes();
                 while (nodes.hasNext()) {
