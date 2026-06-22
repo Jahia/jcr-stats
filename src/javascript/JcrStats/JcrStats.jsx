@@ -6,7 +6,7 @@ import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
 import {GET_TREE} from './JcrStats.gql';
 
-const DEFAULT_PATH = '/sites/systemsite';
+const DEFAULT_PATH = '/sites';
 const MAX_DEPTH = 6;
 const METRIC_SIZE = 'size';
 const METRIC_NODES = 'nodes';

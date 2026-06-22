@@ -14,7 +14,7 @@ describe('JCR Stats - Admin UI', () => {
     it('shows the path input with a default value', () => {
         cy.login();
         cy.visit(adminPath);
-        cy.get('#jcrstats-path').should('be.visible').and('have.value', '/sites/systemsite');
+        cy.get('#jcrstats-path').should('be.visible').and('have.value', '/sites');
     });
 
     it('shows the metric selector defaulting to size', () => {
@@ -48,7 +48,7 @@ describe('JCR Stats - Admin UI', () => {
 
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
             .should('be.visible')
-            .and('contain', 'systemsite');
+            .and('contain', 'sites');
         // The caption reports the node-count measure when weighting by nodes
         cy.get('[data-testid="jcrstats-flamegraph-caption"]').should('contain', 'nodes');
     });
@@ -85,7 +85,7 @@ describe('JCR Stats - Admin UI', () => {
         cy.contains('button', 'Compute size').click();
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
             .should('be.visible')
-            .and('contain', 'systemsite');
+            .and('contain', 'sites');
 
         // Frames are SVG <rect>s; the text <div> is pointer-events:none, so a real click lands
         // on the rect. Click by coordinate within the top row (rowHeight=20) to hit the root.
