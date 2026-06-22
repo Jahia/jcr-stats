@@ -98,4 +98,33 @@ describe('JCR Stats - GraphQL API', () => {
                 });
         });
     });
+
+    describe('jcrStats async compute', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const compute: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/compute.graphql');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const getStatus: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getStatus.graphql');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const getResult: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getResult.graphql');
+
+        it('computes asynchronously: compute starts a job, status reports completion, result returns the tree', () => {
+            cy.apollo({mutation: compute, variables: {path: TEST_PATH}})
+                .its('data.jcrStats.compute')
+                .should('be.a', 'boolean');
+
+            // Poll status until the background job finishes and a result is cached
+            cy.waitUntil(
+                () => cy.apollo({query: getStatus, fetchPolicy: 'no-cache'})
+                    .then((r: {data: {jcrStats: {status: {running: boolean; hasResult: boolean}}}}) =>
+                        r.data.jcrStats.status.running === false && r.data.jcrStats.status.hasResult === true),
+                {timeout: 60000, interval: 2000}
+            );
+
+            cy.apollo({query: getResult, variables: {maxDepth: 3}})
+                .its('data.jcrStats.result')
+                .should((tree: {name: string; nodeCount: number}) => {
+                    expect(Number(tree.nodeCount)).to.be.at.least(1);
+                });
+        });
+    });
 });

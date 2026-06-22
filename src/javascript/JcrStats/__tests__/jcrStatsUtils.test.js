@@ -4,6 +4,7 @@ import {
     percent,
     flatten,
     buildJContentUrl,
+    formatDuration,
     diffTrees,
     signedBytes,
     METRIC_SIZE,
@@ -323,5 +324,21 @@ describe('signedBytes', () => {
 
     it('formats a large negative delta correctly', () => {
         expect(signedBytes(-KIB * KIB)).toBe('-1.0 MB');
+    });
+});
+
+describe('formatDuration', () => {
+    it('formats sub-minute durations in seconds', () => {
+        expect(formatDuration(0)).toBe('0s');
+        expect(formatDuration(8000)).toBe('8s');
+        expect(formatDuration(59000)).toBe('59s');
+    });
+    it('formats minute+ durations with zero-padded seconds', () => {
+        expect(formatDuration(65000)).toBe('1m 05s');
+        expect(formatDuration(600000)).toBe('10m 00s');
+    });
+    it('clamps negative / non-finite input to 0s', () => {
+        expect(formatDuration(-5000)).toBe('0s');
+        expect(formatDuration(NaN)).toBe('0s');
     });
 });

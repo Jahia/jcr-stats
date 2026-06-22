@@ -4,11 +4,13 @@ import graphql.annotations.annotationTypes.GraphQLDescription;
 import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import org.jahia.community.jcrstats.JcrStatsComputer;
+import org.jahia.community.jcrstats.JcrStatsService;
 import org.jahia.community.jcrstats.NodeStats;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.services.content.JCRNodeIteratorWrapper;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRTemplate;
+import org.jahia.osgi.BundleUtils;
 import org.jahia.services.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,6 +88,39 @@ public class JcrStatsQuery {
     }
 
     @GraphQLField
+    @GraphQLName("status")
+    @GraphQLDescription("Status of the asynchronous computation: running flag, last path, error, and whether a cached result is ready.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public GqlJcrStatsStatus status() {
+        final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
+        if (service == null) {
+            return new GqlJcrStatsStatus(false, null, null, false, 0L, 0L, 0L);
+        }
+        return new GqlJcrStatsStatus(service.isRunning(), service.getLastPath(), service.getLastError(), service.getLastResult() != null,
+                service.getStartedAt(), service.getElapsedMs(), service.getVisitedCount());
+    }
+
+    @GraphQLField
+    @GraphQLName("result")
+    @GraphQLDescription("Returns the latest asynchronously-computed tree pruned to maxDepth, or null if none is available yet.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public GqlNodeStats result(
+            @GraphQLName("maxDepth")
+            @GraphQLDescription("Maximum number of child levels to include (default 6).")
+            Integer maxDepth) {
+        final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
+        if (service == null) {
+            return null;
+        }
+        final NodeStats tree = service.getLastResult();
+        if (tree == null) {
+            return null;
+        }
+        final int depth = maxDepth == null ? DEFAULT_MAX_DEPTH : Math.max(0, maxDepth);
+        return new GqlNodeStats(tree, depth);
+    }
+
+    @GraphQLField
     @GraphQLName("reports")
     @GraphQLDescription("Lists the generated flamegraph files stored under " + REPORTS_BASE_PATH)
     @GraphQLRequiresPermission("jcrStatsAdmin")
@@ -109,6 +144,79 @@ public class JcrStatsQuery {
         } catch (RepositoryException e) {
             LOGGER.error("Failed to list jcr-stats reports", e);
             return Collections.emptyList();
+        }
+    }
+
+    @GraphQLName("JcrStatsStatus")
+    @GraphQLDescription("Status of the asynchronous JCR stats computation")
+    public static class GqlJcrStatsStatus {
+
+        private final boolean running;
+        private final String path;
+        private final String error;
+        private final boolean hasResult;
+        private final long startedAt;
+        private final long elapsedMs;
+        private final long visitedCount;
+
+        public GqlJcrStatsStatus(boolean running, String path, String error, boolean hasResult,
+                long startedAt, long elapsedMs, long visitedCount) {
+            this.running = running;
+            this.path = path;
+            this.error = error;
+            this.hasResult = hasResult;
+            this.startedAt = startedAt;
+            this.elapsedMs = elapsedMs;
+            this.visitedCount = visitedCount;
+        }
+
+        @GraphQLField
+        @GraphQLName("running")
+        @GraphQLDescription("Whether a computation is currently in progress")
+        public boolean isRunning() {
+            return running;
+        }
+
+        @GraphQLField
+        @GraphQLName("path")
+        @GraphQLDescription("Path of the last (or in-progress) computation")
+        public String getPath() {
+            return path;
+        }
+
+        @GraphQLField
+        @GraphQLName("error")
+        @GraphQLDescription("Error message of the last computation, or null")
+        public String getError() {
+            return error;
+        }
+
+        @GraphQLField
+        @GraphQLName("hasResult")
+        @GraphQLDescription("Whether a cached result is available to fetch")
+        public boolean isHasResult() {
+            return hasResult;
+        }
+
+        @GraphQLField
+        @GraphQLName("startedAt")
+        @GraphQLDescription("Epoch millis when the current/last computation started (0 if none)")
+        public long getStartedAt() {
+            return startedAt;
+        }
+
+        @GraphQLField
+        @GraphQLName("elapsedMs")
+        @GraphQLDescription("Elapsed time in ms: live while running, otherwise the last run's duration")
+        public long getElapsedMs() {
+            return elapsedMs;
+        }
+
+        @GraphQLField
+        @GraphQLName("visitedCount")
+        @GraphQLDescription("Number of nodes visited so far (live progress; no total is known up front)")
+        public long getVisitedCount() {
+            return visitedCount;
         }
     }
 

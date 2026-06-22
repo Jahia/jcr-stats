@@ -1,0 +1,16 @@
+query getResult($maxDepth: Int) {
+    jcrStats {
+        result(maxDepth: $maxDepth) {
+            name
+            path
+            size
+            nodeCount
+            children {
+                name
+                path
+                size
+                nodeCount
+            }
+        }
+    }
+}

@@ -1,9 +1,33 @@
 import {gql} from '@apollo/client';
 
-export const GET_TREE = gql`
-    query JcrStatsTree($path: String, $maxDepth: Int) {
+export const COMPUTE = gql`
+    mutation JcrStatsCompute($path: String) {
         jcrStats {
-            tree(path: $path, maxDepth: $maxDepth) {
+            compute(path: $path)
+        }
+    }
+`;
+
+export const GET_STATUS = gql`
+    query JcrStatsStatus {
+        jcrStats {
+            status {
+                running
+                path
+                error
+                hasResult
+                startedAt
+                elapsedMs
+                visitedCount
+            }
+        }
+    }
+`;
+
+export const GET_RESULT = gql`
+    query JcrStatsResult($maxDepth: Int) {
+        jcrStats {
+            result(maxDepth: $maxDepth) {
                 name
                 path
                 size

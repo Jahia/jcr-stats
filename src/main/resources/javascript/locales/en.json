@@ -13,6 +13,7 @@
     "emptyHint": "Enter a JCR path and click Compute to analyze it.",
     "baselineLoadedHint": "Baseline loaded. Compute or load a current snapshot to compare it.",
     "computing": "Computing…",
+    "nodesScanned": "nodes scanned",
     "save": "Save data",
     "load": "Load data",
     "compareWith": "Compare with…",

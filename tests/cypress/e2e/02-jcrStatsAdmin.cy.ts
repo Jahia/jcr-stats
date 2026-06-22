@@ -1,8 +1,23 @@
+import {DocumentNode} from 'graphql'
+
 describe('JCR Stats - Admin UI', () => {
     const adminPath = '/jahia/administration/jcrStatsExecution'
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const getStatus: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getStatus.graphql')
 
     before(() => {
         cy.login()
+    })
+
+    // The async computation is shared server state; wait until it is idle before each test so a
+    // long-running job started by a previous test is not picked up by the next one (resume-on-mount).
+    beforeEach(() => {
+        cy.login()
+        cy.waitUntil(
+            () => cy.apollo({query: getStatus, fetchPolicy: 'no-cache'})
+                .then((r: {data: {jcrStats: {status: {running: boolean}}}}) => r.data.jcrStats.status.running === false),
+            {timeout: 60000, interval: 2000}
+        )
     })
 
     it('shows the page title', () => {
