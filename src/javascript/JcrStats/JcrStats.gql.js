@@ -5,30 +5,37 @@ export const GET_TREE = gql`
         jcrStats {
             tree(path: $path, maxDepth: $maxDepth) {
                 name
+                path
                 size
                 nodeCount
                 children {
                     name
+                    path
                     size
                     nodeCount
                     children {
                         name
+                        path
                         size
                         nodeCount
                         children {
                             name
+                            path
                             size
                             nodeCount
                             children {
                                 name
+                                path
                                 size
                                 nodeCount
                                 children {
                                     name
+                                    path
                                     size
                                     nodeCount
                                     children {
                                         name
+                                        path
                                         size
                                         nodeCount
                                     }

@@ -117,12 +117,14 @@ public class JcrStatsQuery {
     public static class GqlNodeStats {
 
         private final String name;
+        private final String path;
         private final long size;
         private final long nodeCount;
         private final List<GqlNodeStats> children;
 
         public GqlNodeStats(NodeStats stats, int remainingDepth) {
             this.name = stats.getName();
+            this.path = stats.getPath();
             this.size = stats.getSize();
             this.nodeCount = JcrStatsComputer.countNodes(stats);
             this.children = new ArrayList<>();
@@ -138,6 +140,13 @@ public class JcrStatsQuery {
         @GraphQLDescription("Node name (last path segment, or ROOT)")
         public String getName() {
             return name;
+        }
+
+        @GraphQLField
+        @GraphQLName("path")
+        @GraphQLDescription("Full JCR path of this node")
+        public String getPath() {
+            return path;
         }
 
         @GraphQLField

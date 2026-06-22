@@ -165,3 +165,80 @@
 .js_hiddenInput {
   display: none;
 }
+
+/* Tree-table / Largest / Diff views */
+.js_tableWrap {
+  margin-top: var(--spacing-medium, 16px);
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid #d3d7db;
+  border-radius: var(--radius, 4px);
+}
+
+.js_table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.js_table th,
+.js_table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid #eceef0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.js_table thead th {
+  position: sticky;
+  top: 0;
+  background: #f5f6f7;
+  font-weight: 600;
+  z-index: 1;
+}
+
+.js_num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.js_path {
+  color: var(--color-gray, #5c6370);
+  font-size: 0.75rem;
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.js_treeName {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.js_treeToggle {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  width: 1.3em;
+  padding: 0;
+  color: var(--color-gray, #5c6370);
+}
+
+.js_treeSpacer {
+  display: inline-block;
+  width: 1.3em;
+}
+
+.js_grew td {
+  background: #fdecea;
+}
+
+.js_shrank td {
+  background: #eaf7eb;
+}
+
+.js_focusLink {
+  margin-left: var(--spacing-medium, 16px);
+  color: var(--color-accent, #00a0e3);
+}

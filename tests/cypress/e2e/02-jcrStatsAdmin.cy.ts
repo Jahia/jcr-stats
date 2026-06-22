@@ -114,4 +114,36 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
         cy.contains('button', 'Save data').should('be.visible');
     });
+    it('shows a tree-table with percentages', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains('button', 'Compute size').click();
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
+        cy.get('#jcrstats-view').select('table');
+        cy.get('[data-testid="jcrstats-table"]').should('be.visible')
+            .and('contain', '% total')
+            .and('contain', 'sites');
+    });
+
+    it('shows the largest items with jContent links', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.contains('button', 'Compute size').click();
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
+        cy.get('#jcrstats-view').select('largest');
+        cy.get('[data-testid="jcrstats-largest"]').should('be.visible');
+        // Nodes under a site deep-link into jContent
+        cy.get('[data-testid="jcrstats-largest"] a[href*="/jahia/jcontent/"]').should('exist');
+    });
+
+    it('compares the current snapshot against a loaded baseline (diff)', () => {
+        cy.login();
+        cy.visit(adminPath);
+        // Current = sample v1 (loaded from file), baseline = v2 (different sizes)
+        cy.get('[data-testid="jcrstats-load-input"]').selectFile('cypress/fixtures/sample-flamegraph.json', {force: true});
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 30000}).should('be.visible');
+        cy.get('[data-testid="jcrstats-baseline-input"]').selectFile('cypress/fixtures/sample-flamegraph-v2.json', {force: true});
+        // The comparison view appears with the changed node
+        cy.get('[data-testid="jcrstats-diff"]', {timeout: 10000}).should('be.visible').and('contain', 'child-a');
+    });
 });

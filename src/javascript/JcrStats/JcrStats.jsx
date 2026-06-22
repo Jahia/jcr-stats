@@ -1,40 +1,28 @@
 import React, {useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo} from 'react';
 import {useLazyQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
-import {Button, Loader, Typography, Bar, Download, Upload} from '@jahia/moonstone';
+import {Button, Loader, Typography, Bar, Download, Upload, Compare} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
 import {GET_TREE} from './JcrStats.gql';
+import {formatBytes, METRIC_SIZE, METRIC_NODES, buildJContentUrl} from './jcrStatsUtils';
+import {TreeTable} from './TreeTable';
+import {TopList} from './TopList';
+import {DiffTable} from './DiffTable';
 
 const DEFAULT_PATH = '/sites';
 const MAX_DEPTH = 6;
-const METRIC_SIZE = 'size';
-const METRIC_NODES = 'nodes';
-const KIB = 1024;
-const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
-// Gap left between the flamegraph and the bottom of the window.
 const BOTTOM_MARGIN = 24;
 const MIN_HEIGHT = 320;
 const SAVE_FORMAT = 'jcr-stats-flamegraph';
-
-const formatBytes = bytes => {
-    if (bytes === null || bytes === undefined || !Number.isFinite(Number(bytes)) || bytes < 0) {
-        return '—';
-    }
-    let value = Number(bytes);
-    let unitIndex = 0;
-    while (value >= KIB && unitIndex < UNITS.length - 1) {
-        value /= KIB;
-        unitIndex += 1;
-    }
-    return `${unitIndex === 0 ? value : value.toFixed(1)} ${UNITS[unitIndex]}`;
-};
+const VIEW_FLAMEGRAPH = 'flamegraph';
+const VIEW_TABLE = 'table';
+const VIEW_LARGEST = 'largest';
+const VIEW_DIFF = 'diff';
 
 // Map the jcrStats.tree shape onto react-flame-graph's {name, value, children}. The `value`
-// (frame width) is driven by the chosen metric — aggregated bytes or aggregated node count —
-// floored at 1 so zero-weight subtrees still render a frame. Both raw measures are kept on the
-// node (carried through on react-flame-graph's `.source`) for the caption/tooltip. Values are
-// coerced defensively because the tree may come from an imported (untrusted) file.
+// (frame width) follows the chosen metric, floored at 1 so zero-weight subtrees still render.
+// Raw measures + path are kept on the node (carried on react-flame-graph's `.source`).
 const toFlameNode = (node, metric) => {
     const bytes = Number.isFinite(Number(node.size)) ? Number(node.size) : 0;
     const nodeCount = Number.isFinite(Number(node.nodeCount)) ? Number(node.nodeCount) : 0;
@@ -44,21 +32,34 @@ const toFlameNode = (node, metric) => {
         value: Math.max(weight, 1),
         bytes,
         nodeCount,
+        nodePath: node.path,
         tooltip: `${node.name}: ${formatBytes(bytes)} · ${nodeCount} nodes`,
         children: Array.isArray(node.children) ? node.children.map(child => toFlameNode(child, metric)) : []
     };
+};
+
+// Validate + extract a tree from an imported file (export envelope or a raw tree node).
+const extractTree = parsed => {
+    const loaded = parsed && parsed.tree ? parsed.tree : parsed;
+    if (!loaded || typeof loaded.name !== 'string' || loaded.size === undefined) {
+        return null;
+    }
+    return {tree: loaded, path: (parsed && parsed.path) || loaded.name};
 };
 
 export const JcrStatsAdmin = () => {
     const {t} = useTranslation('jcr-stats');
     const [path, setPath] = useState(DEFAULT_PATH);
     const [metric, setMetric] = useState(METRIC_SIZE);
+    const [view, setView] = useState(VIEW_FLAMEGRAPH);
     const [status, setStatus] = useState(null);
     const [focused, setFocused] = useState(null);
     const [tree, setTree] = useState(null);
     const [treePath, setTreePath] = useState(DEFAULT_PATH);
+    const [baseline, setBaseline] = useState(null);
     const containerRef = useRef(null);
     const fileInputRef = useRef(null);
+    const baselineInputRef = useRef(null);
     const [dimensions, setDimensions] = useState({width: 900, height: 600});
 
     useEffect(() => {
@@ -67,17 +68,12 @@ export const JcrStatsAdmin = () => {
 
     const [loadTree, {loading}] = useLazyQuery(GET_TREE, {fetchPolicy: 'network-only'});
 
-    // Stable identity: react-flame-graph reacts to `data` changes, so a fresh object every
-    // render (combined with the resize effect) would loop forever (React error #185).
     const flameData = useMemo(() => (tree ? toFlameNode(tree, metric) : null), [tree, metric]);
 
-    // Format a measure according to the selected metric.
     const describeMetric = useCallback((bytes, nodeCount) => (
         metric === METRIC_NODES ? `${nodeCount} ${t('label.nodesUnit')}` : formatBytes(bytes)
     ), [metric, t]);
 
-    // Fit the flamegraph to the available width, and to the height between its own top edge
-    // and the bottom of the window (so it never extends past the viewport bottom).
     const measure = useCallback(() => {
         const el = containerRef.current;
         if (!el) {
@@ -91,20 +87,18 @@ export const JcrStatsAdmin = () => {
     }, []);
 
     useLayoutEffect(() => {
-        if (!flameData) {
+        if (!flameData || view !== VIEW_FLAMEGRAPH) {
             return undefined;
         }
         measure();
         window.addEventListener('resize', measure);
         return () => window.removeEventListener('resize', measure);
-    }, [flameData, measure]);
+    }, [flameData, measure, view]);
 
-    // Clicking a frame zooms react-flame-graph and reports the focused node here.
-    // onChange receives the internal chart node; the original measures are on `.source`.
     const handleFocusChange = useCallback(node => {
         if (node) {
             const source = node.source || node;
-            setFocused({name: source.name, bytes: source.bytes, nodeCount: source.nodeCount});
+            setFocused({name: source.name, bytes: source.bytes, nodeCount: source.nodeCount, path: source.nodePath});
         }
     }, []);
 
@@ -123,6 +117,7 @@ export const JcrStatsAdmin = () => {
             if (computed) {
                 setTree(computed);
                 setTreePath(targetPath);
+                setView(VIEW_FLAMEGRAPH);
                 setStatus('success');
             } else {
                 setStatus('error');
@@ -132,19 +127,11 @@ export const JcrStatsAdmin = () => {
         }
     };
 
-    // Save the current tree to a JSON file for offline analysis / sharing.
     const handleSave = () => {
         if (!tree) {
             return;
         }
-        const payload = {
-            format: SAVE_FORMAT,
-            version: 1,
-            path: treePath,
-            maxDepth: MAX_DEPTH,
-            exportedAt: new Date().toISOString(),
-            tree
-        };
+        const payload = {format: SAVE_FORMAT, version: 1, path: treePath, maxDepth: MAX_DEPTH, exportedAt: new Date().toISOString(), tree};
         const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
         const url = URL.createObjectURL(blob);
         const safePath = (treePath || 'root').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -157,32 +144,16 @@ export const JcrStatsAdmin = () => {
         URL.revokeObjectURL(url);
     };
 
-    const handleLoadClick = () => {
-        if (fileInputRef.current) {
-            fileInputRef.current.click();
-        }
-    };
-
-    // Load a previously saved tree (accepts the {format, path, tree} envelope or a raw tree node).
-    const handleFileSelected = event => {
-        const file = event.target.files && event.target.files[0];
-        event.target.value = ''; // allow re-selecting the same file
-        if (!file) {
-            return;
-        }
+    const readFile = (file, onTree) => {
         const reader = new FileReader();
         reader.onload = () => {
             try {
-                const parsed = JSON.parse(reader.result);
-                const loaded = parsed && parsed.tree ? parsed.tree : parsed;
-                if (!loaded || typeof loaded.name !== 'string' || loaded.size === undefined) {
+                const extracted = extractTree(JSON.parse(reader.result));
+                if (extracted) {
+                    onTree(extracted);
+                } else {
                     setStatus('error');
-                    return;
                 }
-                setFocused(null);
-                setTreePath((parsed && parsed.path) || loaded.name);
-                setTree(loaded);
-                setStatus('success');
             } catch (_err) {
                 setStatus('error');
             }
@@ -191,9 +162,38 @@ export const JcrStatsAdmin = () => {
         reader.readAsText(file);
     };
 
+    const handleFileSelected = event => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = '';
+        if (!file) {
+            return;
+        }
+        readFile(file, ({tree: loaded, path: loadedPath}) => {
+            setFocused(null);
+            setTreePath(loadedPath);
+            setTree(loaded);
+            setView(VIEW_FLAMEGRAPH);
+            setStatus('success');
+        });
+    };
+
+    const handleBaselineSelected = event => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = '';
+        if (!file) {
+            return;
+        }
+        readFile(file, ({tree: loaded}) => {
+            setBaseline(loaded);
+            setView(VIEW_DIFF);
+            setStatus('success');
+        });
+    };
+
+    const focusUrl = focused ? buildJContentUrl(focused.path) : null;
+
     return (
         <div className={styles.js_container}>
-            {/* Fixed-role live regions for screen readers */}
             <div role="status" aria-live="polite" aria-atomic="true" className={styles.js_sr_only}>
                 {status === 'success' ? t('label.success') : ''}
             </div>
@@ -218,7 +218,6 @@ export const JcrStatsAdmin = () => {
                     value={path}
                     onChange={e => setPath(e.target.value)}
                     onKeyDown={e => {
-                        // Ctrl+Enter (or Cmd+Enter) submits the form.
                         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                             e.preventDefault();
                             handleCompute();
@@ -226,38 +225,15 @@ export const JcrStatsAdmin = () => {
                     }}
                 />
                 <label className={styles.js_label} htmlFor="jcrstats-metric">{t('label.metric')}</label>
-                <select
-                    id="jcrstats-metric"
-                    className={styles.js_select}
-                    value={metric}
-                    onChange={handleMetricChange}
-                >
+                <select id="jcrstats-metric" className={styles.js_select} value={metric} onChange={handleMetricChange}>
                     <option value={METRIC_SIZE}>{t('label.metricSize')}</option>
                     <option value={METRIC_NODES}>{t('label.metricNodes')}</option>
                 </select>
-                <Button
-                    size="big"
-                    color="accent"
-                    icon={<Bar/>}
-                    label={t('label.compute')}
-                    isDisabled={loading}
-                    onClick={handleCompute}
-                />
-                <Button
-                    size="big"
-                    icon={<Upload/>}
-                    label={t('label.load')}
-                    onClick={handleLoadClick}
-                />
-                <input
-                    ref={fileInputRef}
-                    id="jcrstats-load-input"
-                    data-testid="jcrstats-load-input"
-                    type="file"
-                    accept="application/json,.json"
-                    className={styles.js_hiddenInput}
-                    onChange={handleFileSelected}
-                />
+                <Button size="big" color="accent" icon={<Bar/>} label={t('label.compute')} isDisabled={loading} onClick={handleCompute}/>
+                <Button size="big" icon={<Upload/>} label={t('label.load')} onClick={() => fileInputRef.current && fileInputRef.current.click()}/>
+                <Button size="big" icon={<Compare/>} label={t('label.compareWith')} onClick={() => baselineInputRef.current && baselineInputRef.current.click()}/>
+                <input ref={fileInputRef} id="jcrstats-load-input" data-testid="jcrstats-load-input" type="file" accept="application/json,.json" className={styles.js_hiddenInput} onChange={handleFileSelected}/>
+                <input ref={baselineInputRef} id="jcrstats-baseline-input" data-testid="jcrstats-baseline-input" type="file" accept="application/json,.json" className={styles.js_hiddenInput} onChange={handleBaselineSelected}/>
             </div>
 
             {loading && (
@@ -268,39 +244,46 @@ export const JcrStatsAdmin = () => {
             )}
 
             {status === 'error' && (
-                <div className={`${styles.js_alert} ${styles['js_alert--error']}`}>
-                    {t('label.error')}
-                </div>
+                <div className={`${styles.js_alert} ${styles['js_alert--error']}`}>{t('label.error')}</div>
             )}
 
-            {/* Interactive, in-app flamegraph rendered directly in React from the tree data */}
-            {flameData && (
+            {tree && (
                 <div className={styles.js_interactive}>
                     <div className={styles.js_interactive_head}>
-                        <Typography weight="bold" className={styles.js_interactive_title}>
-                            {t('label.interactiveTitle')}
-                        </Typography>
-                        <Typography className={styles.js_hint}>{t('label.clickHint')}</Typography>
-                        <Button
-                            size="default"
-                            icon={<Download/>}
-                            label={t('label.save')}
-                            onClick={handleSave}
-                        />
+                        <label className={styles.js_label} htmlFor="jcrstats-view">{t('label.view')}</label>
+                        <select id="jcrstats-view" className={styles.js_select} value={view} onChange={e => setView(e.target.value)}>
+                            <option value={VIEW_FLAMEGRAPH}>{t('label.viewFlamegraph')}</option>
+                            <option value={VIEW_TABLE}>{t('label.viewTable')}</option>
+                            <option value={VIEW_LARGEST}>{t('label.viewLargest')}</option>
+                            {baseline && <option value={VIEW_DIFF}>{t('label.viewDiff')}</option>}
+                        </select>
+                        <Button size="default" icon={<Download/>} label={t('label.save')} onClick={handleSave}/>
                     </div>
-                    <div data-testid="jcrstats-flamegraph-caption" className={styles.js_caption}>
-                        {focused
-                            ? `${t('label.focused')}: ${focused.name} — ${describeMetric(focused.bytes, focused.nodeCount)}`
-                            : `${tree.name} — ${describeMetric(tree.size, tree.nodeCount)}`}
-                    </div>
-                    <div ref={containerRef} data-testid="jcrstats-flamegraph-react" className={styles.js_flamegraph_react}>
-                        <FlameGraph
-                            data={flameData}
-                            height={dimensions.height}
-                            width={dimensions.width}
-                            onChange={handleFocusChange}
-                        />
-                    </div>
+
+                    {view === VIEW_FLAMEGRAPH && (
+                        <>
+                            <Typography className={styles.js_hint}>{t('label.clickHint')}</Typography>
+                            <div data-testid="jcrstats-flamegraph-caption" className={styles.js_caption}>
+                                {focused
+                                    ? `${t('label.focused')}: ${focused.name} — ${describeMetric(focused.bytes, focused.nodeCount)}`
+                                    : `${tree.name} — ${describeMetric(tree.size, tree.nodeCount)}`}
+                                {focusUrl && (
+                                    <a className={styles.js_focusLink} href={focusUrl} target="_blank" rel="noopener noreferrer">
+                                        {t('label.openJContent')}
+                                    </a>
+                                )}
+                            </div>
+                            {flameData && (
+                                <div ref={containerRef} data-testid="jcrstats-flamegraph-react" className={styles.js_flamegraph_react}>
+                                    <FlameGraph data={flameData} height={dimensions.height} width={dimensions.width} onChange={handleFocusChange}/>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {view === VIEW_TABLE && <TreeTable tree={tree} metric={metric}/>}
+                    {view === VIEW_LARGEST && <TopList tree={tree} metric={metric}/>}
+                    {view === VIEW_DIFF && baseline && <DiffTable baseline={baseline} current={tree}/>}
                 </div>
             )}
         </div>
