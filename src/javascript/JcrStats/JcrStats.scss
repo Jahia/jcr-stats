@@ -33,7 +33,7 @@
   margin-bottom: var(--spacing-large, 24px);
   padding: var(--spacing-medium, 16px);
   background: var(--color-light, #fdfdfd);
-  /* M-2: darkened accent fallback — #006fa0 achieves ≥7:1 on white (AAA) */
+  /* M-2: non-text UI boundary — SC 1.4.11 needs only 3:1; #006fa0 (~5.9:1 on white) clears it. */
   border-left: 3px solid var(--color-accent, #006fa0);
   border-radius: 0 var(--radius, 4px) var(--radius, 4px) 0;
   max-width: 900px;
@@ -303,8 +303,8 @@
 
 .js_focusLink {
   margin-left: var(--spacing-medium, 16px);
-  /* M-2: darkened accent fallback — #006fa0 achieves ≥7:1 on white (AAA) */
-  color: var(--color-accent, #006fa0);
+  /* M-2: link TEXT needs AAA 1.4.6 (7:1 on white). #005a82 ≈ 7.1:1; #006fa0 was only ~5.9:1 (AA). */
+  color: var(--color-accent, #005a82);
 }
 
 /*
