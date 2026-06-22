@@ -1,52 +1,26 @@
 package org.jahia.community.jcrstats;
 
 import org.apache.commons.io.FileUtils;
-import org.apache.jackrabbit.JcrConstants;
-import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.karaf.shell.api.action.Action;
 import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.Option;
 import org.apache.karaf.shell.api.action.lifecycle.Service;
-import org.jahia.api.Constants;
-import org.jahia.services.content.JCRContentUtils;
-import org.jahia.services.content.JCRNodeIteratorWrapper;
-import org.jahia.services.content.JCRNodeWrapper;
-import org.jahia.services.content.JCRSessionFactory;
-import org.jahia.services.content.JCRSessionWrapper;
-import org.jahia.services.content.JCRTemplate;
-import org.jahia.services.content.QueryManagerWrapper;
-import org.jahia.services.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
 
 import javax.jcr.RepositoryException;
-import javax.jcr.query.Query;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
+/**
+ * Karaf shell command {@code jcr-stats:compute-size}.
+ *
+ * <p>Thin entry point that delegates to {@link JcrStatsComputer}; the same engine backs the GraphQL
+ * API and the admin UI so all three surfaces behave identically.</p>
+ */
 @Command(scope = "jcr-stats", name = "compute-size", description = "Compute size")
 @Service
 public class ComputeSizeCommand implements Action {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ComputeSizeCommand.class);
-    private static final String FILE_NAME = "flamegraph";
-    private static final String FILE_EXT = ".html";
-    private static final Path TMP_PATH = FileSystems.getDefault().getPath(System.getProperty("java.io.tmpdir"));
 
     @Option(name = "-p", aliases = "--path", description = "Path to compute")
     private String path = "/";
@@ -56,133 +30,10 @@ public class ComputeSizeCommand implements Action {
 
     @Override
     public Object execute() throws RepositoryException {
-        final NodeStats nodeStats = JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path));
-        writeGraphFile(nodeStats);
+        final ComputeResult result = new JcrStatsComputer().computeAndWriteFlamegraph(path, deleteTemporaryFile);
+        LOGGER.info("Computed {} node(s) under {} totalling {} (flamegraph: {})",
+                result.getNodeCount(), result.getPath(),
+                FileUtils.byteCountToDisplaySize(result.getTotalSize()), result.getFlamegraphPath());
         return null;
-    }
-
-    private void writeGraphFile(NodeStats nodeStats) {
-        Path graphPath = null;
-        try {
-            graphPath = Files.createTempFile(TMP_PATH, FILE_NAME, FILE_EXT);
-            writeGraphData(nodeStats, graphPath);
-        } catch (IOException ex) {
-            LOGGER.error("Impossible to create graph file", ex);
-        } finally {
-            if (deleteTemporaryFile && graphPath != null) {
-                try {
-                    Files.deleteIfExists(graphPath);
-                } catch (IOException ex) {
-                    LOGGER.error("Impossible to delete temporary file", ex);
-                }
-            }
-        }
-    }
-
-    private void writeGraphData(NodeStats nodeStats, Path graphPath) {
-        final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd/HH/mm/ss");
-        final String storageFolder = dateFormat.format(new Date());
-
-        final File graphFile = graphPath.toFile();
-        writeGraphHeader(graphFile);
-        try (final FileOutputStream fileOutputStream = new FileOutputStream(graphFile, true);
-             final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
-             final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
-            writeGraphNode(nodeStats, bufferedWriter, 0, 0L);
-        } catch (IOException | RepositoryException ex) {
-            LOGGER.error("Impossible to write graph", ex);
-        }
-        writeGraphFooter(graphFile);
-        try (final InputStream graphStream = new FileInputStream(graphFile)) {
-            final JCRNodeWrapper jcrStatsNode = mkdirs("/sites/systemsite/files/jcr-stats/" + storageFolder);
-            jcrStatsNode.uploadFile(FILE_NAME, graphStream, MediaType.TEXT_HTML_VALUE);
-            jcrStatsNode.saveSession();
-        } catch (IOException | RepositoryException ex) {
-            LOGGER.error("Impossible to write graph", ex);
-        }
-    }
-
-    private void writeGraphHeader(File graphFile) {
-        try {
-            final URL inputUrl = this.getClass().getClassLoader().getResource("META-INF/templates/flamegraph.header.vm");
-            FileUtils.copyURLToFile(inputUrl, graphFile);
-        } catch (IOException ex) {
-            LOGGER.error("Impossible to copy header", ex);
-        }
-    }
-
-    private void writeGraphFooter(File graphFile) {
-        try (final InputStream inputStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm");
-             final InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
-             final BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
-             final FileOutputStream fileOutputStream = new FileOutputStream(graphFile, true);
-             final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
-             final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
-
-            String line;
-
-            while ((line = bufferedReader.readLine()) != null) {
-                bufferedWriter.write(line);
-                bufferedWriter.newLine();
-            }
-
-        } catch (IOException ex) {
-            LOGGER.error("Impossible to copy footer", ex);
-        }
-    }
-
-    /**
-     * Recursively writes one flamegraph data line per node.
-     * Package-private to allow unit testing without a live JCR session.
-     */
-    void writeGraphNode(NodeStats nodeStats, BufferedWriter bufferedWriter, int level, long startPosition) throws RepositoryException, IOException {
-        if (LOGGER.isDebugEnabled()) {
-            // Guarded: byteCountToDisplaySize() is evaluated eagerly regardless of log level (Sonar S2629).
-            LOGGER.debug("Node {}: {}", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize()));
-        }
-        final String line = String.format("f(%s,%s,%s,%s,\"%s\")", level, startPosition, nodeStats.getSize(), 0, nodeStats.getName());
-        bufferedWriter.write(line);
-        bufferedWriter.newLine();
-        for (NodeStats subNodeStats : nodeStats.getSubNodeStats()) {
-            writeGraphNode(subNodeStats, bufferedWriter, level + 1, startPosition);
-            startPosition = startPosition + subNodeStats.getSize();
-        }
-        bufferedWriter.flush();
-    }
-
-    private NodeStats computeSize(JCRSessionWrapper session, String currentPath) throws RepositoryException {
-        session.refresh(false);
-        final NodeStats currentNodeStats = new NodeStats(currentPath);
-        final QueryManagerWrapper manager = session.getWorkspace().getQueryManager();
-        final String queryStmt = String.format("SELECT * FROM [%s] AS content WHERE ISCHILDNODE(content, '%s')", JcrConstants.NT_BASE, JCRContentUtils.sqlEncode(currentPath));
-        final QueryWrapper query = manager.createQuery(queryStmt, Query.JCR_SQL2);
-        final JCRNodeIteratorWrapper nodeIterator = query.execute().getNodes();
-        final JCRNodeWrapper nodeWrapper = session.getNode(currentPath, false);
-        if (nodeWrapper.hasProperty(JcrConstants.JCR_DATA)) {
-            currentNodeStats.setSize(nodeWrapper.getProperty(JcrConstants.JCR_DATA).getLength());
-        }
-
-        while (nodeIterator.hasNext()) {
-            final JCRNodeWrapper subNodeWrapper = (JCRNodeWrapper) nodeIterator.next();
-            final NodeStats nodeStats = computeSize(session, subNodeWrapper.getPath());
-            currentNodeStats.addSubNodeStats(nodeStats);
-        }
-
-        return currentNodeStats;
-    }
-
-    private static JCRNodeWrapper mkdirs(String path) throws RepositoryException {
-        final JCRSessionWrapper session = JCRSessionFactory.getInstance().getCurrentSystemSession(Constants.EDIT_WORKSPACE, null, null);
-        JCRNodeWrapper folderNode = session.getRootNode();
-        for (String folder : path.split(FileSystem.SEPARATOR)) {
-            if (!folder.isEmpty()) {
-                if (folderNode.hasNode(folder)) {
-                    folderNode = folderNode.getNode(folder);
-                } else {
-                    folderNode = folderNode.addNode(folder, "jnt:folder");
-                }
-            }
-        }
-        return folderNode;
     }
 }

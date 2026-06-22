@@ -1,0 +1,311 @@
+.js_sr_only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.js_container {
+  font-family: 'Nunito Sans', sans-serif;
+  color: var(--color-dark, #131c21);
+  /* Full width so the flamegraph can use the whole admin content area */
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-large, 24px);
+}
+
+.js_header h2 {
+  margin: 0 0 0 1.5625rem;
+  padding: 0;
+  font-size: 1.5625rem;
+  line-height: 5.3125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.js_description {
+  margin-bottom: var(--spacing-large, 24px);
+  padding: var(--spacing-medium, 16px);
+  background: var(--color-light, #fdfdfd);
+  border-left: 3px solid var(--color-accent, #00a0e3);
+  border-radius: 0 var(--radius, 4px) var(--radius, 4px) 0;
+  max-width: 900px;
+}
+
+.js_form {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-medium, 16px);
+  margin-bottom: var(--spacing-large, 24px);
+  max-width: 900px;
+}
+
+.js_label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-dark, #131c21);
+}
+
+.js_input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #767676;
+  border-radius: var(--radius, 4px);
+  font-size: 0.875rem;
+  font-family: 'Nunito Sans', sans-serif;
+
+  &:focus-visible {
+    /* M-2: darkened focus outline — #0a5a78 achieves ≥3:1 against white backgrounds */
+    outline: 2px solid #0a5a78;
+    outline-offset: 2px;
+    border-color: #0a5a78;
+  }
+}
+
+.js_running {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-medium, 16px);
+  padding: var(--spacing-medium, 16px) 0;
+  margin-bottom: var(--spacing-medium, 16px);
+}
+
+.js_running_text {
+  font-size: 0.875rem;
+  /* M-1: darkened fallback — #3d4450 achieves ≥7:1 on white (AAA 1.4.6) */
+  color: var(--color-gray, #3d4450);
+}
+
+.js_alert {
+  padding: var(--spacing-small, 8px) var(--spacing-medium, 16px);
+  border-radius: var(--radius, 4px);
+  font-size: 0.8125rem;
+  margin-bottom: var(--spacing-medium, 16px);
+  border: 1px solid transparent;
+
+  &--error {
+    background: #fdecea;
+    border-color: var(--color-danger, #f44053);
+    color: var(--color-danger_dark, #840d0f);
+  }
+}
+
+.js_interactive {
+  margin-top: var(--spacing-medium, 16px);
+
+  /* H-5: suppress the default focus ring that appears when the region receives
+     programmatic focus (tabIndex={-1}) — the visible content already makes the
+     context clear. Only suppress for :focus, not :focus-visible, so keyboard
+     tab-to users in browsers that distinguish them still see an indicator. */
+  &:focus {
+    outline: none;
+  }
+}
+
+.js_interactive_title {
+  margin-bottom: var(--spacing-small, 8px);
+}
+
+.js_caption {
+  margin-bottom: var(--spacing-small, 8px);
+  font-size: 0.8125rem;
+  /* M-1: darkened fallback — #3d4450 achieves ≥7:1 on white (AAA 1.4.6) */
+  color: var(--color-gray, #3d4450);
+  word-break: break-all;
+}
+
+.js_flamegraph_react {
+  width: 100%;
+  border: 1px solid #d3d7db;
+  border-radius: var(--radius, 4px);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.js_interactive_head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-medium, 16px);
+  flex-wrap: wrap;
+}
+
+.js_hint {
+  font-size: 0.8125rem;
+  /* M-1: darkened fallback — #3d4450 achieves ≥7:1 on white (AAA 1.4.6) */
+  color: var(--color-gray, #3d4450);
+}
+
+.js_select {
+  padding: 6px 10px;
+  border: 1px solid #767676;
+  border-radius: var(--radius, 4px);
+  font-size: 0.875rem;
+  font-family: 'Nunito Sans', sans-serif;
+  background: #ffffff;
+  cursor: pointer;
+
+  &:focus-visible {
+    /* M-2: darkened focus outline — #0a5a78 achieves ≥3:1 against white backgrounds */
+    outline: 2px solid #0a5a78;
+    outline-offset: 2px;
+    border-color: #0a5a78;
+  }
+}
+
+/* react-flame-graph animates every <rect>/<g>/<foreignObject> with `transition: all 200ms`
+   on each focus/zoom. Animating many SVG elements janks the click even on small trees, so
+   disable the transition — zoom/focus becomes instant. (Element selectors are global; the
+   leading local class scopes them to this widget.) */
+.js_flamegraph_react g,
+.js_flamegraph_react rect,
+.js_flamegraph_react foreignObject,
+.js_flamegraph_react foreignObject div {
+  transition: none !important;
+}
+
+.js_form {
+  flex-wrap: wrap;
+  max-width: none;
+}
+
+/*
+  H-3: Hidden file inputs use the sr-only clip pattern instead of display:none so
+  assistive technology can discover and announce them. tabIndex={-1} in JSX keeps
+  them out of the natural keyboard tab order while still allowing programmatic
+  activation from the visible Upload / Compare buttons.
+*/
+.js_hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Tree-table / Largest / Diff views */
+.js_tableWrap {
+  margin-top: var(--spacing-medium, 16px);
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid #d3d7db;
+  border-radius: var(--radius, 4px);
+}
+
+.js_table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.js_table th,
+.js_table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid #eceef0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.js_table thead th {
+  position: sticky;
+  top: 0;
+  background: #f5f6f7;
+  font-weight: 600;
+  z-index: 1;
+}
+
+.js_num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.js_path {
+  /* M-1: darkened fallback — #3d4450 achieves ≥7:1 on white (AAA 1.4.6) */
+  color: var(--color-gray, #3d4450);
+  font-size: 0.75rem;
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.js_treeName {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.js_treeToggle {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  width: 1.3em;
+  padding: 0;
+  /* M-1: darkened fallback for toggle glyph */
+  color: var(--color-gray, #3d4450);
+
+  &:focus-visible {
+    /* M-2: consistent focus ring on the toggle button */
+    outline: 2px solid #0a5a78;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.js_treeSpacer {
+  display: inline-block;
+  width: 1.3em;
+}
+
+.js_grew td {
+  background: #fdecea;
+}
+
+.js_shrank td {
+  background: #eaf7eb;
+}
+
+.js_focusLink {
+  margin-left: var(--spacing-medium, 16px);
+  color: var(--color-accent, #00a0e3);
+}
+
+/*
+  L-1: Honour prefers-reduced-motion (WCAG 2.3.3 AAA).
+  Disables all transitions and animations within the widget for users who have
+  expressed a preference for reduced motion at the OS level.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .js_container *,
+  .js_container *::before,
+  .js_container *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Ensure the react-flame-graph override still applies */
+  .js_flamegraph_react g,
+  .js_flamegraph_react rect,
+  .js_flamegraph_react foreignObject,
+  .js_flamegraph_react foreignObject div {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.js_empty {
+  padding: var(--spacing-medium, 16px);
+  color: var(--color-gray, #3d4450);
+  font-style: italic;
+}

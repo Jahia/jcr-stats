@@ -1,0 +1,17 @@
+{
+  "format": "jcr-stats-flamegraph",
+  "version": 1,
+  "path": "/loaded/sample",
+  "maxDepth": 6,
+  "exportedAt": "2026-06-22T00:00:00.000Z",
+  "tree": {
+    "name": "loaded-sample",
+    "path": "/loaded/sample",
+    "size": 4096,
+    "nodeCount": 3,
+    "children": [
+      {"name": "child-a", "path": "/loaded/sample/child-a", "size": 3072, "nodeCount": 1, "children": []},
+      {"name": "child-b", "path": "/loaded/sample/child-b", "size": 1024, "nodeCount": 1, "children": []}
+    ]
+  }
+}
