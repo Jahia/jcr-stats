@@ -106,7 +106,9 @@ public class JcrStatsComputer {
         try {
             graphPath = Files.createTempFile(TMP_PATH, FILE_NAME, FILE_EXT);
             return writeGraphData(nodeStats, graphPath);
-        } catch (IOException ex) {
+        } catch (IOException | IllegalStateException ex) {
+            // IllegalStateException: a mis-packaged bundle (missing flamegraph template) — log and
+            // return null like every other failure path here, rather than escaping the public API.
             LOGGER.error("Impossible to create graph file", ex);
             return null;
         } finally {
@@ -237,8 +239,8 @@ public class JcrStatsComputer {
                 case '<':    sb.append("\\u003C"); break;
                 case '>':    sb.append("\\u003E"); break;
                 case '/':    sb.append("\\u002F"); break;
-                case '\r':  sb.append("\\r"); break;
-                case '\n':  sb.append("\\n"); break;
+                case '\r':  sb.append("\\u000D"); break;
+                case '\n':  sb.append("\\u000A"); break;
                 default:
                     // U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR terminate JS lines
                     if ((int) c == 0x2028) {

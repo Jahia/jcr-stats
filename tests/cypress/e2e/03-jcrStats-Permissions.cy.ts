@@ -78,6 +78,12 @@ describe('JCR Stats — permission enforcement', () => {
                 expect(errs.map((e: { message: string }) => e.message).join(' ')).to.contain('Permission denied')
             })
         })
+
+        it('allows the computeSize mutation for a user granted only the module permission', () => {
+            mutateComputeSizeAs(ALLOWED_USER).then((result: never) => {
+                expect(errorsOf(result), 'should have no errors').to.have.length(0)
+            })
+        })
     })
 
     describe('Admin UI authorization', () => {

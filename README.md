@@ -27,7 +27,7 @@ JCR Stats appears in **Jahia Administration** under **Server > System Health > J
 
 1. **Enter a JCR Path** (defaults to `/sites`)
 2. **Select "Weight by"** — either "Size" (bytes) or "Number of nodes"
-3. **Click "Compute size"** (or press Ctrl+Enter) — initiates analysis
+3. **Click "Compute"** (or press Ctrl+Enter) — initiates analysis
 4. **View Results in Four Tabs:**
    - **Flamegraph** — Interactive, click to zoom in/out; hover for details
    - **Tree table** — Scrollable, sortable hierarchy showing size, % of total, % of parent, node count
@@ -40,7 +40,7 @@ JCR Stats appears in **Jahia Administration** under **Server > System Health > J
 |---------|---------|
 | Path input | Enter JCR path to analyze (e.g., `/sites/digital`, `/`) |
 | Weight by dropdown | Switch between "Size (bytes)" and "Number of nodes" |
-| Compute size button | Submit analysis (or Ctrl+Enter) |
+| Compute button | Submit analysis (or Ctrl+Enter) |
 | Flamegraph tab | Visualize hierarchy; click a frame to zoom, breadcrumb to zoom out |
 | Tree table tab | Browse complete tree with statistics |
 | Largest items tab | Sorted list of top-N nodes by metric |

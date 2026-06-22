@@ -70,7 +70,7 @@ export const buildJContentUrl = (path, language = 'en') => {
         .filter(segment => segment !== '..')
         .map(encodeURIComponent)
         .join('/');
-    const base = `/jahia/jcontent/${site}/${language}/content-folders`;
+    const base = `/jahia/jcontent/${encodeURIComponent(site)}/${language}/content-folders`;
     return rest ? `${base}/${rest}` : base;
 };
 
