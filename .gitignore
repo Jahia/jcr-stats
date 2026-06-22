@@ -24,3 +24,6 @@ src/main/resources/javascript/apps
 .env
 **/install-state.gz
 .codegraph
+
+# Jest coverage output (consumed by Sonar, not committed)
+coverage

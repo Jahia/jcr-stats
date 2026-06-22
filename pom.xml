@@ -24,6 +24,9 @@
         <jahia-depends>default,graphql-dxm-provider</jahia-depends>
         <jahia-module-type>system</jahia-module-type>
         <yarn.arguments>build:production</yarn.arguments>
+        <jacoco.version>0.8.11</jacoco.version>
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.javascript.lcov.reportPaths>coverage/lcov.info</sonar.javascript.lcov.reportPaths>
     </properties>
 
     <repositories>
@@ -119,6 +122,26 @@
                         <configuration>
                             <arguments>${yarn.arguments}</arguments>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

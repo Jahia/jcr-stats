@@ -10,16 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **GraphQL API** — New `jcrStats` namespace under root Query and Mutation, supporting:
-  - Query operations: `size(path)`, `nodeCount(path)`, `tree(path, maxDepth)`, `reports()`
-  - Mutation: `computeSize(path, deleteTemporaryFile)`
+  - Query operations: `size(path)`, `nodeCount(path)`, `tree(path, maxDepth)`, `status()`, `result(maxDepth)`, `reports()`
+  - Mutations: `compute(path)` (fire-and-forget async start), `computeSize(path, deleteTemporaryFile)` (synchronous full flamegraph)
   - All operations require `jcrStatsAdmin` permission
   - Recursive node tree with depth limiting for efficient payload size
 
+- **Asynchronous Computation** — Background job model for large subtree traversal:
+  - `compute(path)` mutation starts a single server-wide background job (no-op if one is already running)
+  - `status()` query returns live progress: running flag, elapsed time (ms), visited node count, path, error state
+  - `result(maxDepth)` query returns the cached tree once computation completes
+  - Client-side polling pattern: fire compute, poll status every 2s, fetch result on completion
+  - Progress UI shows elapsed timer and scanned-node counter
+  - Resume-on-remount: navigating away from the page and back resumes status display of a still-running job
+
 - **React Admin UI** — Interactive space analysis interface at `/jahia/administration/jcrStatsExecution`:
-  - **Flamegraph View** — Click-to-zoom interactive visualization of space usage
-  - **Tree Table View** — Hierarchical breakdown with columns for size, % of total, % of parent, and node count
+  - **Flamegraph View** — Click-to-zoom interactive visualization of space usage; keyboard hint advises use of Tree table for keyboard access
+  - **Tree Table View** — Hierarchical breakdown with columns for size, % of total, % of parent, and node count; fully keyboard accessible
   - **Largest Items View** — Sorted top-N list of space consumers
   - **Comparison View** — Snapshot diff to track space changes over time
+  - **Progress Indicator** — While computing: animated loader + elapsed timer + live scanned-node count
+  - **Snapshot Save/Load** — Download current tree as JSON; upload previously saved snapshots; load baselines for comparison
 
 - **Metrics** — Support for weighting analysis by:
   - **Size (bytes)** — Disk usage analysis
@@ -71,13 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- N/A (new feature release)
+- Defensive node-count traversal cap prevents unbounded memory use on pathologically large trees
+- Hardened JSON-import validation for snapshot upload (strict schema enforcement)
 
 ### Security
 
 - All GraphQL operations validate `jcrStatsAdmin` permission at execution time
-- No hardcoded paths; JCR traversal respects node-level permissions
+- **JCR traversal uses a privileged system session**: The `compute(path)` and `computeSize(path)` operations use `JCRTemplate.doExecuteWithSystemSession`, which bypasses node-level read ACLs. Consequently, holding the `jcrStatsAdmin` permission grants full-repository structural/size visibility regardless of per-node JCR read permissions. This is intentional—administrators need to understand the full storage footprint. When assigning the `jcr-stats-administrator` role, treat it as granting broad read-visibility into the entire JCR tree.
 - Flamegraph HTML files are generated with safe, non-executable content
+- Input validation on path parameters; JCR node traversal bounded by configurable depth limit
 
 ---
 

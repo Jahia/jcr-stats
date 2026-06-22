@@ -3,7 +3,6 @@ import {JcrStatsAdmin} from './JcrStats';
 import React from 'react';
 
 export default () => {
-    console.debug('%c jcr-stats: activation in progress', 'color: #463CBA');
     registry.add('adminRoute', 'jcrStats', {
         targets: ['administration-server-systemHealth:998'],
         requiredPermission: 'jcrStatsAdmin',

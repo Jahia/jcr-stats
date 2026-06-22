@@ -13,7 +13,7 @@
     "lint": "yarn lint:js",
     "lint:fix": "yarn lint:js:fix",
     "sync-pom": "sync-pom-version --use-yarn",
-    "test": "jest"
+    "test": "jest --coverage"
   },
   "description": "JCR Stats admin UI for Jahia",
   "main": "index.js",
@@ -48,6 +48,18 @@
     "testMatch": [
       "**/src/javascript/**/__tests__/**/*.test.js"
     ],
+    "moduleNameMapper": {
+      "\\.(scss|css)$": "<rootDir>/src/javascript/JcrStats/__tests__/styleMock.js"
+    },
+    "collectCoverageFrom": [
+      "src/javascript/**/*.{js,jsx}",
+      "!src/javascript/index.js",
+      "!src/javascript/init.js"
+    ],
+    "coverageReporters": [
+      "lcov",
+      "text-summary"
+    ],
     "transform": {
       "^.+\\.jsx?$": [
         "babel-jest",
@@ -60,7 +72,8 @@
                   "node": "current"
                 }
               }
-            ]
+            ],
+            "@babel/preset-react"
           ]
         }
       ]

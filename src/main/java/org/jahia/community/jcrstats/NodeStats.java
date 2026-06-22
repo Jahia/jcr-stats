@@ -1,5 +1,6 @@
 package org.jahia.community.jcrstats;
 
+import java.util.Collections;
 import java.util.Objects;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -46,8 +47,13 @@ public class NodeStats implements Comparable<NodeStats> {
         return nodeCount;
     }
 
+    /**
+     * Returns the children as an unmodifiable view so callers cannot mutate the internal TreeSet
+     * (which would desync the accumulated size/nodeCount). Use {@link #addSubNodeStats(NodeStats)}
+     * to add children during construction.
+     */
     public SortedSet<NodeStats> getSubNodeStats() {
-        return subNodeStats;
+        return Collections.unmodifiableSortedSet(subNodeStats);
     }
 
     public void addSubNodeStats(NodeStats nodeStats) {
