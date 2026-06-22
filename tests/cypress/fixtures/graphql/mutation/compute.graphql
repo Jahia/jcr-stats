@@ -1,0 +1,5 @@
+mutation compute($path: String) {
+    jcrStats {
+        compute(path: $path)
+    }
+}

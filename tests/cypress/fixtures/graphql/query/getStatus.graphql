@@ -1,0 +1,10 @@
+query getStatus {
+    jcrStats {
+        status {
+            running
+            path
+            error
+            hasResult
+        }
+    }
+}

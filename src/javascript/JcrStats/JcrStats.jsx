@@ -1,10 +1,10 @@
 import React, {useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo} from 'react';
-import {useLazyQuery} from '@apollo/client';
+import {useLazyQuery, useMutation, useQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography, Bar, Download, Upload, Compare} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {GET_TREE} from './JcrStats.gql';
+import {COMPUTE, GET_STATUS, GET_RESULT} from './JcrStats.gql';
 import {formatBytes, METRIC_SIZE, METRIC_NODES, buildJContentUrl} from './jcrStatsUtils';
 import {TreeTable} from './TreeTable';
 import {TopList} from './TopList';
@@ -12,6 +12,7 @@ import {DiffTable} from './DiffTable';
 
 const DEFAULT_PATH = '/sites';
 const MAX_DEPTH = 6;
+const STATUS_POLL_MS = 2000;
 const BOTTOM_MARGIN = 24;
 const MIN_HEIGHT = 320;
 const SAVE_FORMAT = 'jcr-stats-flamegraph';
@@ -58,6 +59,7 @@ export const JcrStatsAdmin = () => {
     const [tree, setTree] = useState(null);
     const [treePath, setTreePath] = useState(DEFAULT_PATH);
     const [baseline, setBaseline] = useState(null);
+    const [computing, setComputing] = useState(false);
     const containerRef = useRef(null);
     const fileInputRef = useRef(null);
     const baselineInputRef = useRef(null);
@@ -69,7 +71,14 @@ export const JcrStatsAdmin = () => {
         document.title = `${t('label.title')} — Jahia Administration`;
     }, [t]);
 
-    const [loadTree, {loading}] = useLazyQuery(GET_TREE, {fetchPolicy: 'network-only'});
+    const [startCompute] = useMutation(COMPUTE);
+    const [fetchResult] = useLazyQuery(GET_RESULT, {fetchPolicy: 'network-only'});
+    // While a computation runs, poll its status; the heavy traversal happens server-side off-request.
+    const {data: statusData} = useQuery(GET_STATUS, {
+        skip: !computing,
+        pollInterval: computing ? STATUS_POLL_MS : 0,
+        fetchPolicy: 'network-only'
+    });
 
     const flameData = useMemo(() => (tree ? toFlameNode(tree, metric) : null), [tree, metric]);
 
@@ -100,6 +109,41 @@ export const JcrStatsAdmin = () => {
         return () => window.removeEventListener('resize', measure);
     }, [flameData, measure, view]);
 
+    // When the polled status reports the async computation is done, fetch + render the cached result.
+    useEffect(() => {
+        if (!computing) {
+            return;
+        }
+
+        const current = statusData && statusData.jcrStats && statusData.jcrStats.status;
+        if (!current || current.running) {
+            return;
+        }
+
+        setComputing(false);
+        if (current.error) {
+            setStatus('error');
+            return;
+        }
+
+        if (current.hasResult) {
+            fetchResult({variables: {maxDepth: MAX_DEPTH}})
+                .then(response => {
+                    const computed = response && response.data && response.data.jcrStats && response.data.jcrStats.result;
+                    if (computed) {
+                        setFocused(null);
+                        setTree(computed);
+                        setTreePath(current.path);
+                        setView(VIEW_FLAMEGRAPH);
+                        setStatus('success');
+                    } else {
+                        setStatus('error');
+                    }
+                })
+                .catch(() => setStatus('error'));
+        }
+    }, [statusData, computing, fetchResult]);
+
     const handleFocusChange = useCallback(node => {
         if (node) {
             const source = node.source || node;
@@ -129,16 +173,10 @@ export const JcrStatsAdmin = () => {
         setFocused(null);
         const targetPath = path || '/';
         try {
-            const result = await loadTree({variables: {path: targetPath, maxDepth: MAX_DEPTH}});
-            const computed = result?.data?.jcrStats?.tree;
-            if (computed) {
-                setTree(computed);
-                setTreePath(targetPath);
-                setView(VIEW_FLAMEGRAPH);
-                setStatus('success');
-            } else {
-                setStatus('error');
-            }
+            // Fire-and-forget: starts the server-side job (no-op if one is already running),
+            // then we poll jcrStats.status and fetch the result when it completes.
+            await startCompute({variables: {path: targetPath}});
+            setComputing(true);
         } catch (_) {
             setStatus('error');
         }
@@ -257,9 +295,9 @@ export const JcrStatsAdmin = () => {
                         <option value={METRIC_SIZE}>{t('label.metricSize')}</option>
                         <option value={METRIC_NODES}>{t('label.metricNodes')}</option>
                     </select>
-                    <Button size="big" color="accent" icon={<Bar/>} label={t('label.compute')} isDisabled={loading} onClick={handleCompute}/>
-                    <Button size="big" icon={<Upload/>} label={t('label.load')} isDisabled={loading} onClick={() => fileInputRef.current && fileInputRef.current.click()}/>
-                    <Button size="big" icon={<Compare/>} label={t('label.compareWith')} isDisabled={loading} onClick={() => baselineInputRef.current && baselineInputRef.current.click()}/>
+                    <Button size="big" color="accent" icon={<Bar/>} label={t('label.compute')} isDisabled={computing} onClick={handleCompute}/>
+                    <Button size="big" icon={<Upload/>} label={t('label.load')} isDisabled={computing} onClick={() => fileInputRef.current && fileInputRef.current.click()}/>
+                    <Button size="big" icon={<Compare/>} label={t('label.compareWith')} isDisabled={computing} onClick={() => baselineInputRef.current && baselineInputRef.current.click()}/>
                     {/*
                       H-3: Hidden file inputs are now clipped (sr-only) rather than display:none
                       so AT can discover them, and each has an associated <label> for a proper
@@ -294,7 +332,7 @@ export const JcrStatsAdmin = () => {
                 </div>
             </section>
 
-            {loading && (
+            {computing && (
                 <div className={styles.js_running}>
                     <Loader size="big"/>
                     <Typography className={styles.js_running_text}>{t('label.computing')}</Typography>
@@ -312,7 +350,7 @@ export const JcrStatsAdmin = () => {
                 </div>
             )}
 
-            {!tree && !loading && status !== 'error' && (
+            {!tree && !computing && status !== 'error' && (
                 <div className={styles.js_empty}>
                     {baseline ? t('label.baselineLoadedHint') : t('label.emptyHint')}
                 </div>

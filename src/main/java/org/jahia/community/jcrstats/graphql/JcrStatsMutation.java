@@ -5,7 +5,9 @@ import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import org.jahia.community.jcrstats.ComputeResult;
 import org.jahia.community.jcrstats.JcrStatsComputer;
+import org.jahia.community.jcrstats.JcrStatsService;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
+import org.jahia.osgi.BundleUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,6 +18,18 @@ import javax.jcr.RepositoryException;
 public class JcrStatsMutation {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JcrStatsMutation.class);
+
+    @GraphQLField
+    @GraphQLName("compute")
+    @GraphQLDescription("Starts an asynchronous computation of the subtree at the given path. Returns false if one is already running. Poll jcrStats.status, then read jcrStats.result when it finishes.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean compute(
+            @GraphQLName("path")
+            @GraphQLDescription("JCR path to compute (defaults to /)")
+            String path) {
+        final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
+        return service != null && service.start(path);
+    }
 
     @GraphQLField
     @GraphQLName("computeSize")
