@@ -21,6 +21,8 @@ describe('JCR Stats — permission enforcement', () => {
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const getSize: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getSize.graphql');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const computeSize: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/mutation/computeSize.graphql');
 
     const errorsOf = (result: {graphQLErrors?: Array<{message: string}>; errors?: Array<{message: string}>}) =>
         result.graphQLErrors ?? result.errors ?? [];
@@ -28,6 +30,11 @@ describe('JCR Stats — permission enforcement', () => {
     const querySizeAs = (username: string) => {
         cy.apolloClient({username, password: PASSWORD});
         return cy.apollo({query: getSize, variables: {path: TEST_PATH}});
+    };
+
+    const mutateComputeSizeAs = (username: string) => {
+        cy.apolloClient({username, password: PASSWORD});
+        return cy.apollo({mutation: computeSize, variables: {path: TEST_PATH, deleteTemporaryFile: true}});
     };
 
     before(() => {
@@ -59,6 +66,14 @@ describe('JCR Stats — permission enforcement', () => {
             querySizeAs(ALLOWED_USER).then((result: never) => {
                 expect(errorsOf(result), 'should have no errors').to.have.length(0);
                 expect(Number((result as {data: {jcrStats: {size: number}}}).data.jcrStats.size)).to.be.at.least(0);
+            });
+        });
+
+        it('denies the computeSize mutation for a user without the permission', () => {
+            mutateComputeSizeAs(DENIED_USER).then((result: never) => {
+                const errs = errorsOf(result);
+                expect(errs, 'mutation denial errors').to.have.length.greaterThan(0);
+                expect(errs.map((e: {message: string}) => e.message).join(' ')).to.contain('Permission denied');
             });
         });
     });

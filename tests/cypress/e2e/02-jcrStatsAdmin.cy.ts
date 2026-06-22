@@ -28,7 +28,7 @@ describe('JCR Stats - Admin UI', () => {
         cy.visit(adminPath);
         cy.get('#jcrstats-path').clear();
         cy.get('#jcrstats-path').type('/sites/systemsite');
-        cy.contains('button', 'Compute size').click();
+        cy.contains('button', 'Compute').click();
 
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
             .should('be.visible')
@@ -44,7 +44,7 @@ describe('JCR Stats - Admin UI', () => {
         cy.login();
         cy.visit(adminPath);
         cy.get('#jcrstats-metric').select('nodes');
-        cy.contains('button', 'Compute size').click();
+        cy.contains('button', 'Compute').click();
 
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
             .should('be.visible')
@@ -67,7 +67,7 @@ describe('JCR Stats - Admin UI', () => {
     it('sizes the flamegraph to the viewport: full-width and not past the window bottom', () => {
         cy.login();
         cy.visit(adminPath);
-        cy.contains('button', 'Compute size').click();
+        cy.contains('button', 'Compute').click();
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
 
         cy.window().then(win => {
@@ -82,7 +82,7 @@ describe('JCR Stats - Admin UI', () => {
     it('reacts to clicking a flamegraph frame (focus shows the measure)', () => {
         cy.login();
         cy.visit(adminPath);
-        cy.contains('button', 'Compute size').click();
+        cy.contains('button', 'Compute').click();
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000})
             .should('be.visible')
             .and('contain', 'sites');
@@ -110,14 +110,14 @@ describe('JCR Stats - Admin UI', () => {
     it('offers a Save data button once a flamegraph is shown', () => {
         cy.login();
         cy.visit(adminPath);
-        cy.contains('button', 'Compute size').click();
+        cy.contains('button', 'Compute').click();
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
         cy.contains('button', 'Save data').should('be.visible');
     });
     it('shows a tree-table with percentages', () => {
         cy.login();
         cy.visit(adminPath);
-        cy.contains('button', 'Compute size').click();
+        cy.contains('button', 'Compute').click();
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
         cy.get('#jcrstats-view').select('table');
         cy.get('[data-testid="jcrstats-table"]').should('be.visible')
@@ -128,12 +128,25 @@ describe('JCR Stats - Admin UI', () => {
     it('shows the largest items with jContent links', () => {
         cy.login();
         cy.visit(adminPath);
-        cy.contains('button', 'Compute size').click();
+        cy.contains('button', 'Compute').click();
         cy.get('[data-testid="jcrstats-flamegraph-react"]', {timeout: 60000}).should('be.visible');
         cy.get('#jcrstats-view').select('largest');
         cy.get('[data-testid="jcrstats-largest"]').should('be.visible');
         // Nodes under a site deep-link into jContent
         cy.get('[data-testid="jcrstats-largest"] a[href*="/jahia/jcontent/"]').should('exist');
+    });
+
+    it('shows an error banner and no flamegraph when a malformed file is loaded', () => {
+        cy.login();
+        cy.visit(adminPath);
+        cy.get('[data-testid="jcrstats-load-input"]').selectFile(
+            {contents: Cypress.Buffer.from('not json'), fileName: 'bad.json'},
+            {force: true}
+        );
+        // The interactive flamegraph must NOT appear
+        cy.get('[data-testid="jcrstats-flamegraph-react"]').should('not.exist');
+        // An error alert must be visible and carry meaningful text
+        cy.get('[role="alert"]').should('be.visible').and('not.be.empty');
     });
 
     it('compares the current snapshot against a loaded baseline (diff)', () => {
