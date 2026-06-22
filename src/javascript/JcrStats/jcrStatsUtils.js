@@ -107,3 +107,11 @@ export const signedBytes = delta => {
     const sign = delta > 0 ? '+' : delta < 0 ? '-' : '';
     return `${sign}${formatBytes(Math.abs(delta))}`;
 };
+
+// Human-readable elapsed time, e.g. "8s" or "2m 05s".
+export const formatDuration = ms => {
+    const totalSeconds = Math.max(0, Math.floor(Number(ms) / 1000) || 0);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`;
+};

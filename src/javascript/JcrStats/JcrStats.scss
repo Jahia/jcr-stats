@@ -309,3 +309,25 @@
   color: var(--color-gray, #3d4450);
   font-style: italic;
 }
+
+.js_progress {
+  width: 240px;
+  height: 6px;
+  margin-top: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.js_progress_bar {
+  width: 40%;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-accent, #00a0e3);
+  animation: jcrstats-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes jcrstats-indeterminate {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}

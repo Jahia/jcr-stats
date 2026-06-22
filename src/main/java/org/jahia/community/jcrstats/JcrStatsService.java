@@ -10,6 +10,7 @@ import javax.jcr.RepositoryException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Runs JCR size computations asynchronously on a single background thread and caches the latest
@@ -27,10 +28,13 @@ public class JcrStatsService {
     private static final String GENERIC_ERROR = "Computation failed. Check server logs for details.";
 
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicLong visited = new AtomicLong();
     private volatile NodeStats lastResult;
     private volatile String lastPath;
     private volatile String lastError;
     private volatile long computedAt;
+    private volatile long startedAt;
+    private volatile long finishedAt;
     private ExecutorService executor;
 
     @Activate
@@ -59,9 +63,12 @@ public class JcrStatsService {
             return false;
         }
         lastError = null;
+        visited.set(0L);
+        startedAt = System.currentTimeMillis();
+        finishedAt = 0L;
         executor.submit(() -> {
             try {
-                final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath);
+                final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited);
                 lastResult = tree;
                 lastPath = effectivePath;
                 computedAt = System.currentTimeMillis();
@@ -69,6 +76,7 @@ public class JcrStatsService {
                 lastError = GENERIC_ERROR;
                 LOGGER.error("Asynchronous JCR stats computation failed for path {}", effectivePath, e);
             } finally {
+                finishedAt = System.currentTimeMillis();
                 running.set(false);
             }
         });
@@ -93,5 +101,24 @@ public class JcrStatsService {
 
     public long getComputedAt() {
         return computedAt;
+    }
+
+    /** Epoch millis when the current/last computation started (0 if none yet). */
+    public long getStartedAt() {
+        return startedAt;
+    }
+
+    /** Elapsed time in ms: live while running, otherwise the duration of the last run. */
+    public long getElapsedMs() {
+        if (startedAt == 0L) {
+            return 0L;
+        }
+        final long end = running.get() ? System.currentTimeMillis() : finishedAt;
+        return Math.max(0L, end - startedAt);
+    }
+
+    /** Number of nodes visited so far by the current/last computation. */
+    public long getVisitedCount() {
+        return visited.get();
     }
 }

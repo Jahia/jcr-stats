@@ -94,9 +94,10 @@ public class JcrStatsQuery {
     public GqlJcrStatsStatus status() {
         final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
         if (service == null) {
-            return new GqlJcrStatsStatus(false, null, null, false);
+            return new GqlJcrStatsStatus(false, null, null, false, 0L, 0L, 0L);
         }
-        return new GqlJcrStatsStatus(service.isRunning(), service.getLastPath(), service.getLastError(), service.getLastResult() != null);
+        return new GqlJcrStatsStatus(service.isRunning(), service.getLastPath(), service.getLastError(), service.getLastResult() != null,
+                service.getStartedAt(), service.getElapsedMs(), service.getVisitedCount());
     }
 
     @GraphQLField
@@ -154,12 +155,19 @@ public class JcrStatsQuery {
         private final String path;
         private final String error;
         private final boolean hasResult;
+        private final long startedAt;
+        private final long elapsedMs;
+        private final long visitedCount;
 
-        public GqlJcrStatsStatus(boolean running, String path, String error, boolean hasResult) {
+        public GqlJcrStatsStatus(boolean running, String path, String error, boolean hasResult,
+                long startedAt, long elapsedMs, long visitedCount) {
             this.running = running;
             this.path = path;
             this.error = error;
             this.hasResult = hasResult;
+            this.startedAt = startedAt;
+            this.elapsedMs = elapsedMs;
+            this.visitedCount = visitedCount;
         }
 
         @GraphQLField
@@ -188,6 +196,27 @@ public class JcrStatsQuery {
         @GraphQLDescription("Whether a cached result is available to fetch")
         public boolean isHasResult() {
             return hasResult;
+        }
+
+        @GraphQLField
+        @GraphQLName("startedAt")
+        @GraphQLDescription("Epoch millis when the current/last computation started (0 if none)")
+        public long getStartedAt() {
+            return startedAt;
+        }
+
+        @GraphQLField
+        @GraphQLName("elapsedMs")
+        @GraphQLDescription("Elapsed time in ms: live while running, otherwise the last run's duration")
+        public long getElapsedMs() {
+            return elapsedMs;
+        }
+
+        @GraphQLField
+        @GraphQLName("visitedCount")
+        @GraphQLDescription("Number of nodes visited so far (live progress; no total is known up front)")
+        public long getVisitedCount() {
+            return visitedCount;
         }
     }
 

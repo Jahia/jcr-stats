@@ -16,6 +16,9 @@ export const GET_STATUS = gql`
                 path
                 error
                 hasResult
+                startedAt
+                elapsedMs
+                visitedCount
             }
         }
     }

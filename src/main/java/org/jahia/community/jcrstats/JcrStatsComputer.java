@@ -34,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Reusable JCR size-computation engine.
@@ -63,7 +64,15 @@ public class JcrStatsComputer {
      * Read-only: safe to call from a GraphQL query.
      */
     public NodeStats computeStats(String path) throws RepositoryException {
-        return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path));
+        return computeStats(path, new AtomicLong());
+    }
+
+    /**
+     * Computes the subtree size while incrementing {@code visited} once per node visited, so a
+     * long-running computation can report live progress (a JCR tree has no known total up front).
+     */
+    public NodeStats computeStats(String path, AtomicLong visited) throws RepositoryException {
+        return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path, visited));
     }
 
     /**
@@ -256,8 +265,9 @@ public class JcrStatsComputer {
         return sb.toString();
     }
 
-    private NodeStats computeSize(JCRSessionWrapper session, String currentPath) throws RepositoryException {
+    private NodeStats computeSize(JCRSessionWrapper session, String currentPath, AtomicLong visited) throws RepositoryException {
         session.refresh(false);
+        visited.incrementAndGet();
         final NodeStats currentNodeStats = new NodeStats(currentPath);
         final QueryManagerWrapper manager = session.getWorkspace().getQueryManager();
         final String queryStmt = String.format("SELECT * FROM [%s] AS content WHERE ISCHILDNODE(content, '%s')", JcrConstants.NT_BASE, JCRContentUtils.sqlEncode(currentPath));
@@ -270,7 +280,7 @@ public class JcrStatsComputer {
 
         while (nodeIterator.hasNext()) {
             final JCRNodeWrapper subNodeWrapper = (JCRNodeWrapper) nodeIterator.next();
-            final NodeStats nodeStats = computeSize(session, subNodeWrapper.getPath());
+            final NodeStats nodeStats = computeSize(session, subNodeWrapper.getPath(), visited);
             currentNodeStats.addSubNodeStats(nodeStats);
         }
 

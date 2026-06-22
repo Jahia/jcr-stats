@@ -5,7 +5,7 @@ import {Button, Loader, Typography, Bar, Download, Upload, Compare} from '@jahia
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
 import {COMPUTE, GET_STATUS, GET_RESULT} from './JcrStats.gql';
-import {formatBytes, METRIC_SIZE, METRIC_NODES, buildJContentUrl} from './jcrStatsUtils';
+import {formatBytes, formatDuration, METRIC_SIZE, METRIC_NODES, buildJContentUrl} from './jcrStatsUtils';
 import {TreeTable} from './TreeTable';
 import {TopList} from './TopList';
 import {DiffTable} from './DiffTable';
@@ -60,6 +60,9 @@ export const JcrStatsAdmin = () => {
     const [treePath, setTreePath] = useState(DEFAULT_PATH);
     const [baseline, setBaseline] = useState(null);
     const [computing, setComputing] = useState(false);
+    const [visitedCount, setVisitedCount] = useState(0);
+    const [, setNowTick] = useState(0);
+    const serverElapsedRef = useRef({base: 0, at: 0});
     const containerRef = useRef(null);
     const fileInputRef = useRef(null);
     const baselineInputRef = useRef(null);
@@ -73,6 +76,7 @@ export const JcrStatsAdmin = () => {
 
     const [startCompute] = useMutation(COMPUTE);
     const [fetchResult] = useLazyQuery(GET_RESULT, {fetchPolicy: 'network-only'});
+    const [fetchStatus] = useLazyQuery(GET_STATUS, {fetchPolicy: 'network-only'});
     // While a computation runs, poll its status; the heavy traversal happens server-side off-request.
     const {data: statusData} = useQuery(GET_STATUS, {
         skip: !computing,
@@ -116,7 +120,13 @@ export const JcrStatsAdmin = () => {
         }
 
         const current = statusData && statusData.jcrStats && statusData.jcrStats.status;
-        if (!current || current.running) {
+        if (!current) {
+            return;
+        }
+
+        setVisitedCount(Number(current.visitedCount) || 0);
+        if (current.running) {
+            serverElapsedRef.current = {base: Number(current.elapsedMs) || 0, at: Date.now()};
             return;
         }
 
@@ -143,6 +153,33 @@ export const JcrStatsAdmin = () => {
                 .catch(() => setStatus('error'));
         }
     }, [statusData, computing, fetchResult]);
+
+    // Tick every second while computing so the elapsed timer updates smoothly between 2s polls.
+    useEffect(() => {
+        if (!computing) {
+            return undefined;
+        }
+
+        const id = setInterval(() => setNowTick(Date.now()), 1000);
+        return () => clearInterval(id);
+    }, [computing]);
+
+    // On (re)mount, re-read server status so leaving the page and coming back keeps the live status
+    // of a still-running computation visible (the polling resumes from the server's elapsed/visited).
+    // A *finished* result is intentionally NOT auto-restored: doing so would asynchronously clobber a
+    // tree the user has since loaded from a file (race) and surface another user's last run.
+    useEffect(() => {
+        fetchStatus()
+            .then(response => {
+                const current = response && response.data && response.data.jcrStats && response.data.jcrStats.status;
+                if (current && current.running) {
+                    serverElapsedRef.current = {base: Number(current.elapsedMs) || 0, at: Date.now()};
+                    setVisitedCount(Number(current.visitedCount) || 0);
+                    setComputing(true);
+                }
+            })
+            .catch(() => {});
+    }, [fetchStatus]);
 
     const handleFocusChange = useCallback(node => {
         if (node) {
@@ -171,6 +208,8 @@ export const JcrStatsAdmin = () => {
     const handleCompute = async () => {
         setStatus(null);
         setFocused(null);
+        setVisitedCount(0);
+        serverElapsedRef.current = {base: 0, at: Date.now()};
         const targetPath = path || '/';
         try {
             // Fire-and-forget: starts the server-side job (no-op if one is already running),
@@ -333,9 +372,16 @@ export const JcrStatsAdmin = () => {
             </section>
 
             {computing && (
-                <div className={styles.js_running}>
+                <div className={styles.js_running} data-testid="jcrstats-progress">
                     <Loader size="big"/>
-                    <Typography className={styles.js_running_text}>{t('label.computing')}</Typography>
+                    <div>
+                        <Typography className={styles.js_running_text}>
+                            {`${t('label.computing')} ${formatDuration(serverElapsedRef.current.base + (Date.now() - serverElapsedRef.current.at))} · ${visitedCount.toLocaleString()} ${t('label.nodesScanned')}`}
+                        </Typography>
+                        <div className={styles.js_progress} role="progressbar" aria-label={t('label.computing')}>
+                            <div className={styles.js_progress_bar}/>
+                        </div>
+                    </div>
                 </div>
             )}
 
