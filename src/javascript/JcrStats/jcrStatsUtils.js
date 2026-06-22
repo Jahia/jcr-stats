@@ -9,12 +9,14 @@ export const formatBytes = bytes => {
     if (bytes === null || bytes === undefined || !Number.isFinite(n) || n < 0) {
         return '—';
     }
+
     let value = n;
     let unitIndex = 0;
     while (value >= KIB && unitIndex < UNITS.length - 1) {
         value /= KIB;
         unitIndex += 1;
     }
+
     return `${unitIndex === 0 ? value : value.toFixed(1)} ${UNITS[unitIndex]}`;
 };
 
@@ -28,6 +30,7 @@ export const percent = (part, whole) => {
     if (!whole) {
         return 0;
     }
+
     const p = (part / whole) * 100;
     return Number.isFinite(p) ? p : 0;
 };
@@ -43,6 +46,7 @@ export const flatten = (node, acc = [], depth = 0) => {
             depth
         });
     }
+
     (node.children || []).forEach(child => flatten(child, acc, depth + 1));
     return acc;
 };
@@ -53,12 +57,19 @@ export const buildJContentUrl = (path, language = 'en') => {
     if (typeof path !== 'string') {
         return null;
     }
+
     const match = path.match(/^\/sites\/([^/]+)(\/.*)?$/);
     if (!match) {
         return null;
     }
+
     const site = match[1];
-    const rest = (match[2] || '').replace(/^\//, '');
+    const rest = (match[2] || '')
+        .split('/')
+        .filter(Boolean)
+        .filter(segment => segment !== '..')
+        .map(encodeURIComponent)
+        .join('/');
     const base = `/jahia/jcontent/${site}/${language}/content-folders`;
     return rest ? `${base}/${rest}` : base;
 };
@@ -70,13 +81,16 @@ export const diffTrees = (baseline, current) => {
         if (!node) {
             return;
         }
+
         const p = node.path || node.name;
         if (!map.has(p)) {
             map.set(p, {path: p, name: node.name, baseSize: 0, curSize: 0});
         }
+
         map.get(p)[key] = Number(node.size) || 0;
         (node.children || []).forEach(child => walk(child, key));
     };
+
     walk(baseline, 'baseSize');
     walk(current, 'curSize');
     return Array.from(map.values())

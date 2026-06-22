@@ -17,13 +17,15 @@ export const TopList = ({tree, metric}) => {
             <table className={styles.js_table}>
                 <thead>
                     <tr>
-                        <th>#</th>
-                        <th>{t('label.tableName')}</th>
-                        <th>{t('label.tablePath')}</th>
-                        <th className={styles.js_num}>{t('label.tableSize')}</th>
-                        <th className={styles.js_num}>{t('label.tablePctTotal')}</th>
-                        <th className={styles.js_num}>{t('label.tableNodes')}</th>
-                        <th/>
+                        {/* H-4: scope="col" on every th */}
+                        <th scope="col">#</th>
+                        <th scope="col">{t('label.tableName')}</th>
+                        <th scope="col">{t('label.tablePath')}</th>
+                        <th scope="col" className={styles.js_num}>{t('label.tableSize')}</th>
+                        <th scope="col" className={styles.js_num}>{t('label.tablePctTotal')}</th>
+                        <th scope="col" className={styles.js_num}>{t('label.tableNodes')}</th>
+                        {/* H-4: empty action column gets sr-only label */}
+                        <th scope="col"><span className={styles.js_sr_only}>{t('label.actions')}</span></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -37,7 +39,19 @@ export const TopList = ({tree, metric}) => {
                                 <td className={styles.js_num}>{formatBytes(row.size)}</td>
                                 <td className={styles.js_num}>{percent(measureOf(row, metric), total).toFixed(1)}%</td>
                                 <td className={styles.js_num}>{row.nodeCount}</td>
-                                <td>{url && <a href={url} target="_blank" rel="noopener noreferrer">{t('label.openJContent')}</a>}</td>
+                                <td>
+                                    {url && (
+                                        /* L-2: visible label already describes destination; opensNewTab appended */
+                                        <a
+                                            href={url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            aria-label={`${t('label.openJContent')} ${t('label.opensNewTab')}`}
+                                        >
+                                            {t('label.openJContent')}
+                                        </a>
+                                    )}
+                                </td>
                             </tr>
                         );
                     })}

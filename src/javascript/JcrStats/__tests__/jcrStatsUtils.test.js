@@ -229,7 +229,7 @@ describe('buildJContentUrl', () => {
     });
 
     it('strips .. traversal segments', () => {
-        // buildJContentUrl filters out '..' segments for safety
+        // BuildJContentUrl filters out '..' segments for safety
         expect(buildJContentUrl('/sites/mySite/../evil')).toBe(
             '/jahia/jcontent/mySite/en/content-folders/evil'
         );
@@ -268,8 +268,8 @@ describe('diffTrees', () => {
             makeNode('/r/b', 'b', 100)
         ]);
         const cur = makeNode('/r', 'r', 0, [
-            makeNode('/r/a', 'a', 1001),   // delta +1
-            makeNode('/r/b', 'b', 200)     // delta +100
+            makeNode('/r/a', 'a', 1001), // Delta +1
+            makeNode('/r/b', 'b', 200) // Delta +100
         ]);
         const result = diffTrees(base, cur);
         // /r/b has |delta|=100, /r/a has |delta|=1 — b should appear first
@@ -278,7 +278,7 @@ describe('diffTrees', () => {
     });
 
     it('falls back to node.name when path is an empty string', () => {
-        // walk() uses node.path || node.name
+        // Walk() uses node.path || node.name
         const base = {path: '', name: 'nopath', size: 50, children: []};
         const cur = {path: '', name: 'nopath', size: 80, children: []};
         const result = diffTrees(base, cur);
