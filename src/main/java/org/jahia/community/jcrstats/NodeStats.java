@@ -9,7 +9,8 @@ public class NodeStats implements Comparable<NodeStats> {
 
     private final TreeSet<NodeStats> subNodeStats = new TreeSet<>();
     private final String path;
-    private Long size = 0L;
+    private long size = 0L;
+    private long nodeCount = 1L;
 
     public NodeStats(String path) {
         this.path = path;
@@ -29,16 +30,20 @@ public class NodeStats implements Comparable<NodeStats> {
         return path;
     }
 
-    public void setSize(Long size) {
+    public void setSize(long size) {
         this.size = size;
     }
 
-    public Long getSize() {
+    public long getSize() {
         return size;
     }
 
-    public void addSize(Long size) {
+    public void addSize(long size) {
         this.size = this.size + size;
+    }
+
+    public long getNodeCount() {
+        return nodeCount;
     }
 
     public SortedSet<NodeStats> getSubNodeStats() {
@@ -48,6 +53,7 @@ public class NodeStats implements Comparable<NodeStats> {
     public void addSubNodeStats(NodeStats nodeStats) {
         subNodeStats.add(nodeStats);
         this.addSize(nodeStats.getSize());
+        this.nodeCount += nodeStats.getNodeCount();
     }
 
     /**

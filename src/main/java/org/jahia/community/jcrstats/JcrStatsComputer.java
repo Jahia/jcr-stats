@@ -32,8 +32,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * Reusable JCR size-computation engine.
@@ -49,6 +49,14 @@ public class JcrStatsComputer {
     private static final String FILE_NAME = "flamegraph";
     private static final String FILE_EXT = ".html";
     private static final Path TMP_PATH = FileSystems.getDefault().getPath(System.getProperty("java.io.tmpdir"));
+
+    // Fix 5: static final DateTimeFormatter replaces per-call SimpleDateFormat + new Date()
+    private static final DateTimeFormatter STORAGE_FOLDER_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm/ss");
+
+    // Fix 7: named constant for the 4th arg (stack-depth sentinel) in the f(...) call
+    /** The stack-depth hint passed to the async-profiler flamegraph viewer; always 0 for JCR stats. */
+    private static final int FLAMEGRAPH_STACK_DEPTH = 0;
 
     /**
      * Computes the size statistics of the subtree rooted at {@code path} without writing anything.
@@ -72,13 +80,14 @@ public class JcrStatsComputer {
         return new ComputeResult(effectivePath, nodeStats.getSize(), countNodes(nodeStats), flamegraphPath);
     }
 
-    /** Total number of nodes in the subtree, root included. */
+    /**
+     * Total number of nodes in the subtree, root included.
+     *
+     * <p>Fix 2: delegates to the pre-accumulated {@link NodeStats#getNodeCount()} instead of
+     * recursing, reducing the call complexity from O(n²) to O(1).</p>
+     */
     public static long countNodes(NodeStats nodeStats) {
-        long count = 1L;
-        for (NodeStats subNodeStats : nodeStats.getSubNodeStats()) {
-            count += countNodes(subNodeStats);
-        }
-        return count;
+        return nodeStats.getNodeCount();
     }
 
     /** URL prefix under which JCR files in the default (edit) workspace are served by Jahia. */
@@ -112,18 +121,28 @@ public class JcrStatsComputer {
     }
 
     private String writeGraphData(NodeStats nodeStats, Path graphPath) {
-        final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd/HH/mm/ss");
-        final String storageFolder = dateFormat.format(new Date());
+        // Fix 5: use DateTimeFormatter + LocalDateTime instead of SimpleDateFormat + new Date()
+        final String storageFolder = STORAGE_FOLDER_FORMATTER.format(LocalDateTime.now());
 
         final File graphFile = graphPath.toFile();
         writeGraphHeader(graphFile);
+
+        // Fix 4: track whether the data-writing step succeeded; abort upload on failure
+        boolean dataWritten = false;
         try (final FileOutputStream fileOutputStream = new FileOutputStream(graphFile, true);
              final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
              final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
             writeGraphNode(nodeStats, bufferedWriter, 0, 0L);
+            dataWritten = true;
         } catch (IOException | RepositoryException ex) {
             LOGGER.error("Impossible to write graph", ex);
         }
+
+        // Fix 4: do not upload a partial/corrupt file
+        if (!dataWritten) {
+            return null;
+        }
+
         writeGraphFooter(graphFile);
         try (final InputStream graphStream = new FileInputStream(graphFile)) {
             final JCRNodeWrapper jcrStatsNode = mkdirs("/sites/systemsite/files/jcr-stats/" + storageFolder);
@@ -137,8 +156,12 @@ public class JcrStatsComputer {
     }
 
     private void writeGraphHeader(File graphFile) {
+        // Fix 4: null-check the resource — throws clearly instead of NPE when bundle is mis-packaged
+        final URL inputUrl = this.getClass().getClassLoader().getResource("META-INF/templates/flamegraph.header.vm");
+        if (inputUrl == null) {
+            throw new IllegalStateException("Missing flamegraph template: META-INF/templates/flamegraph.header.vm");
+        }
         try {
-            final URL inputUrl = this.getClass().getClassLoader().getResource("META-INF/templates/flamegraph.header.vm");
             FileUtils.copyURLToFile(inputUrl, graphFile);
         } catch (IOException ex) {
             LOGGER.error("Impossible to copy header", ex);
@@ -146,7 +169,12 @@ public class JcrStatsComputer {
     }
 
     private void writeGraphFooter(File graphFile) {
-        try (final InputStream inputStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm");
+        // Fix 4: null-check the resource — throws clearly instead of NPE when bundle is mis-packaged
+        final InputStream rawStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm");
+        if (rawStream == null) {
+            throw new IllegalStateException("Missing flamegraph template: META-INF/templates/flamegraph.footer.vm");
+        }
+        try (final InputStream inputStream = rawStream;
              final InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
              final BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
              final FileOutputStream fileOutputStream = new FileOutputStream(graphFile, true);
@@ -154,12 +182,10 @@ public class JcrStatsComputer {
              final BufferedWriter bufferedWriter = new BufferedWriter(outputStreamWriter)) {
 
             String line;
-
             while ((line = bufferedReader.readLine()) != null) {
                 bufferedWriter.write(line);
                 bufferedWriter.newLine();
             }
-
         } catch (IOException ex) {
             LOGGER.error("Impossible to copy footer", ex);
         }
@@ -174,14 +200,58 @@ public class JcrStatsComputer {
             // Guarded: byteCountToDisplaySize() is evaluated eagerly regardless of log level (Sonar S2629).
             LOGGER.debug("Node {}: {}", nodeStats.getPath(), FileUtils.byteCountToDisplaySize(nodeStats.getSize()));
         }
-        final String line = String.format("f(%s,%s,%s,%s,\"%s\")", level, startPosition, nodeStats.getSize(), 0, nodeStats.getName());
+        // Fix 1: JS-escape the node name to prevent stored XSS (Sonar java:S5131).
+        // Fix 7: use named constant FLAMEGRAPH_STACK_DEPTH for the 4th arg.
+        final String line = String.format("f(%s,%s,%s,%s,\"%s\")",
+                level, startPosition, nodeStats.getSize(), FLAMEGRAPH_STACK_DEPTH,
+                jsEscape(nodeStats.getName()));
         bufferedWriter.write(line);
         bufferedWriter.newLine();
         for (NodeStats subNodeStats : nodeStats.getSubNodeStats()) {
             writeGraphNode(subNodeStats, bufferedWriter, level + 1, startPosition);
             startPosition = startPosition + subNodeStats.getSize();
         }
-        bufferedWriter.flush();
+        // Fix 6: removed per-node flush(); the try-with-resources close() handles it once.
+    }
+
+    /**
+     * Escapes a string for safe embedding inside a JavaScript double-quoted string literal.
+     *
+     * <p>Characters that could break out of the string or inject script are replaced with their
+     * Unicode escape sequences (backslash-uXXXX) or conventional JS backslash forms, which are
+     * inert in any JS engine and preserve the original display text in the flamegraph viewer.</p>
+     *
+     * <p>Escapes: backslash, double-quote, {@code <}, {@code >}, {@code /},
+     * CR, LF, U+2028 (LINE SEPARATOR), U+2029 (PARAGRAPH SEPARATOR).</p>
+     */
+    private static String jsEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        final StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            final char c = value.charAt(i);
+            switch (c) {
+                case '\\': sb.append("\\\\"); break;
+                case '"':    sb.append("\\\""); break;
+                case '<':    sb.append("\\u003C"); break;
+                case '>':    sb.append("\\u003E"); break;
+                case '/':    sb.append("\\u002F"); break;
+                case '\r':  sb.append("\\r"); break;
+                case '\n':  sb.append("\\n"); break;
+                default:
+                    // U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR terminate JS lines
+                    if ((int) c == 0x2028) {
+                        sb.append("\\u2028");
+                    } else if ((int) c == 0x2029) {
+                        sb.append("\\u2029");
+                    } else {
+                        sb.append(c);
+                    }
+                    break;
+            }
+        }
+        return sb.toString();
     }
 
     private NodeStats computeSize(JCRSessionWrapper session, String currentPath) throws RepositoryException {
