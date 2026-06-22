@@ -1,7 +1,7 @@
 import React, {useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo} from 'react';
 import {useLazyQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
-import {Button, Loader, Typography} from '@jahia/moonstone';
+import {Button, Loader, Typography, Bar, Download, Upload} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
 import {GET_TREE} from './JcrStats.gql';
@@ -238,12 +238,14 @@ export const JcrStatsAdmin = () => {
                 <Button
                     size="big"
                     color="accent"
+                    icon={<Bar/>}
                     label={t('label.compute')}
                     isDisabled={loading}
                     onClick={handleCompute}
                 />
                 <Button
                     size="big"
+                    icon={<Upload/>}
                     label={t('label.load')}
                     onClick={handleLoadClick}
                 />
@@ -281,6 +283,7 @@ export const JcrStatsAdmin = () => {
                         <Typography className={styles.js_hint}>{t('label.clickHint')}</Typography>
                         <Button
                             size="default"
+                            icon={<Download/>}
                             label={t('label.save')}
                             onClick={handleSave}
                         />
