@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Progress UI shows elapsed timer and scanned-node counter
   - Resume-on-remount: navigating away from the page and back resumes status display of a still-running job
 
-- **React Admin UI** — Interactive space analysis interface at `/jahia/administration/jcrStatsExecution`:
+- **React Admin UI** — Interactive space analysis interface at `/jahia/administration/jcrStats`:
   - **Flamegraph View** — Click-to-zoom interactive visualization of space usage; keyboard hint advises use of Tree table for keyboard access
   - **Tree Table View** — Hierarchical breakdown with columns for size, % of total, % of parent, and node count; fully keyboard accessible
   - **Largest Items View** — Sorted top-N list of space consumers
@@ -74,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Root Package Renamed** — From `org.jahia.modules.*` to `org.jahia.community.jcrstats` (community module convention)
 - **Module Type** — Declared as `system` type module in `pom.xml`
 - **Karaf Command** — Refactored to delegate to `JcrStatsComputer` for shared logic
+- **Administration Menu** — Merged the two-level "JCR Statistics → Compute size" navigation into a single selectable **JCR Statistics** entry under System Health (route `jcrStats`); removed the redundant intermediate group
+- **Job Logging** — The asynchronous computation now emits `INFO` log lines when a job starts and when it finishes (with elapsed time and visited-node count)
 
 ### Deprecated
 

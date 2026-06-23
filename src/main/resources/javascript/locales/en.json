@@ -1,7 +1,6 @@
 {
   "label": {
     "menu_entry": "JCR Statistics",
-    "menu_execution": "Compute size",
     "title": "JCR Statistics",
     "description": "Compute a JCR subtree and analyze it as an interactive flamegraph, a sortable tree-table or a top-largest list, weighted by size or number of nodes. Save snapshots to a file, reload them, and compare two snapshots to see what changed. The same computation is available as the jcr-stats:compute-size Karaf command and the jcrStats GraphQL API.",
     "path": "Path",
