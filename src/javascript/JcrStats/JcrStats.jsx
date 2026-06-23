@@ -4,10 +4,11 @@ import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography, Bar, Download, Upload} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT, GET_EXCLUSIONS, ADD_EXCLUSION, REMOVE_EXCLUSION, GET_SNAPSHOTS, SAVE_SNAPSHOT} from './JcrStats.gql';
+import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT, GET_EXCLUSIONS, ADD_EXCLUSION, REMOVE_EXCLUSION, GET_SNAPSHOTS, SAVE_SNAPSHOT, DELETE_SNAPSHOT} from './JcrStats.gql';
 import {
     formatBytes,
     formatDuration,
+    formatTimestamp,
     METRIC_SIZE,
     METRIC_NODES,
     SAVE_FORMAT,
@@ -19,12 +20,32 @@ import {
 import {TreeTable} from './TreeTable';
 import {TopList} from './TopList';
 import {DiffTable} from './DiffTable';
+import {
+    MAX_DEPTH,
+    ERROR_COMPUTE,
+    ERROR_LOAD,
+    ERROR_BASELINE,
+    ERROR_SAVE,
+    ERROR_DELETE,
+    SUCCESS_COMPUTED,
+    SUCCESS_LOADED,
+    SUCCESS_BASELINE,
+    SUCCESS_EXCLUDED,
+    SUCCESS_UNEXCLUDED,
+    SUCCESS_DELETED,
+    INFO_CANCELLED,
+    INFO_CANCEL_MAYBE,
+    ERROR_STATUSES,
+    SUCCESS_STATUSES,
+    INFO_STATUSES,
+    handlePolledStatus,
+    readExclusions,
+    readSnapshots
+} from './jcrStatsController';
 
 const DEFAULT_PATH = '/sites';
-const MAX_DEPTH = 6;
 const STATUS_POLL_MS = 2000;
 const ELAPSED_TICK_MS = 1000;
-const MAX_POLL_MS = 10 * 60 * 1000; // Stop watching a job after ~10 min
 const BOTTOM_MARGIN = 24;
 const MIN_HEIGHT = 320;
 const VIEW_FLAMEGRAPH = 'flamegraph';
@@ -32,104 +53,10 @@ const VIEW_TABLE = 'table';
 const VIEW_LARGEST = 'largest';
 const VIEW_DIFF = 'diff';
 
-// Status kinds for the alert / live region. Errors are distinct per failure path so the
-// message is actionable; successes track which action completed for an accurate announcement.
-const ERROR_COMPUTE = 'errorCompute';
-const ERROR_LOAD = 'errorLoad';
-const ERROR_BASELINE = 'errorBaseline';
-const SUCCESS_COMPUTED = 'success';
-const SUCCESS_LOADED = 'successLoaded';
-const SUCCESS_BASELINE = 'successBaseline';
-const SUCCESS_EXCLUDED = 'successExcluded';
-const SUCCESS_UNEXCLUDED = 'successUnexcluded';
-const INFO_CANCELLED = 'infoCancelled';
-const INFO_TIMEOUT = 'infoTimeout';
-
-const ERROR_STATUSES = [ERROR_COMPUTE, ERROR_LOAD, ERROR_BASELINE];
-const SUCCESS_STATUSES = [SUCCESS_COMPUTED, SUCCESS_LOADED, SUCCESS_BASELINE, SUCCESS_EXCLUDED, SUCCESS_UNEXCLUDED];
-
 const prefersReducedMotion = () =>
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-// Read the freshly-computed result and hand it to the supplied setters, guarded by isCancelled
-// so an overlapping poll + result fetch can't apply a stale result. Extracted from the component
-// to keep the component body's cyclomatic complexity in check.
-const applyComputedResult = (fetchResult, statusPath, handlers) => {
-    const {isCancelled, onResult, onError} = handlers;
-    fetchResult({variables: {maxDepth: MAX_DEPTH}})
-        .then(response => {
-            if (isCancelled()) {
-                return;
-            }
-
-            const computed = response && response.data && response.data.jcrStats && response.data.jcrStats.result;
-            if (computed) {
-                onResult(computed, statusPath);
-            } else {
-                onError();
-            }
-        })
-        .catch(err => {
-            if (isCancelled()) {
-                return;
-            }
-
-            console.error('[jcr-stats] failed to fetch computation result', err);
-            onError();
-        });
-};
-
-// Drive one polled-status update. Returns true when the caller should register the result-fetch
-// cancellation cleanup (i.e. a fetch was kicked off), false otherwise. All side effects go through
-// the `ctx` setters so this stays a pure-ish controller, keeping the effect arrow's complexity low.
-const handlePolledStatus = (current, ctx) => {
-    const {pollStartMs, fetchResult, isCancelled, setters} = ctx;
-
-    if (pollStartMs && (Date.now() - pollStartMs) > MAX_POLL_MS) {
-        setters.stop(INFO_TIMEOUT);
-        return false;
-    }
-
-    setters.setVisitedCount(Number(current.visitedCount) || 0);
-
-    if (current.running) {
-        setters.setRunning(Number(current.elapsedMs) || 0);
-        return false;
-    }
-
-    if (current.cancelled) {
-        // Server job stopped because cancellation was requested — a clean stop, not an error.
-        setters.stop(INFO_CANCELLED);
-        return false;
-    }
-
-    if (current.error) {
-        setters.stop(ERROR_COMPUTE);
-        return false;
-    }
-
-    if (!current.hasResult) {
-        setters.stop(ERROR_COMPUTE);
-        return false;
-    }
-
-    setters.setComputing(false);
-    applyComputedResult(fetchResult, current.path, {
-        isCancelled,
-        onResult: setters.onResult,
-        onError: () => setters.setStatus(ERROR_COMPUTE)
-    });
-    return true;
-};
-
-// Safely reads the exclusions array out of the GET_EXCLUSIONS response. A module-level helper so the
-// short-circuit chain doesn't add to the main component's cyclomatic complexity.
-const readExclusions = data => (data && data.jcrStats && data.jcrStats.exclusions) || [];
-
-// Likewise for the saved-execution snapshot list.
-const readSnapshots = data => (data && data.jcrStats && data.jcrStats.snapshots) || [];
 
 // Fetches a stored snapshot's JSON by URL and loads it into the viewer via the same validated
 // importer (extractTree) as the file-based Load/Compare. Returns two handlers — load as the current
@@ -177,6 +104,36 @@ const useSnapshotLoader = ({setFocused, setTree, setTreePath, setView, setStatus
     }, [fetchSnapshot, setBaseline, setView, setStatus]);
 
     return {handleViewSnapshot, handleCompareSnapshot};
+};
+
+// E-2: deletes a stored execution snapshot (after an optional confirm) and refreshes the list.
+// Extracted into a hook so its try/catch + confirm branching does not inflate the main component's
+// cyclomatic complexity.
+const useSnapshotDeleter = ({t, deleteSnapshot, refetchSnapshots, setStatus}) => {
+    const handleDeleteSnapshot = useCallback(async (snapshotPath, snapshotName) => {
+        // Confirm-before-delete (E-2 nice-to-have): guarded so jsdom/test/headless paths without a
+        // window.confirm don't throw — only block when confirm exists and the user declines.
+        const hasConfirm = typeof window !== 'undefined' && typeof window.confirm === 'function';
+        // eslint-disable-next-line no-alert
+        if (hasConfirm && !window.confirm(t('label.deleteSnapshotConfirm', {name: snapshotName}))) {
+            return;
+        }
+
+        try {
+            const {data} = await deleteSnapshot({variables: {path: snapshotPath}});
+            if (data && data.jcrStats && data.jcrStats.deleteSnapshot) {
+                await refetchSnapshots();
+                setStatus(SUCCESS_DELETED);
+            } else {
+                setStatus(ERROR_DELETE);
+            }
+        } catch (err) {
+            console.error('[jcr-stats] failed to delete snapshot', err);
+            setStatus(ERROR_DELETE);
+        }
+    }, [t, deleteSnapshot, refetchSnapshots, setStatus]);
+
+    return {handleDeleteSnapshot};
 };
 
 // Exclusion add/remove actions, extracted into a hook so their try/catch branching does not inflate
@@ -242,6 +199,8 @@ const RunningProgress = ({t, elapsedMs, visitedCount, onCancel}) => {
                     role="progressbar"
                     aria-label={t('label.computing')}
                     aria-valuetext={countText}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
                 >
                     <div className={styles.js_progress_bar}/>
                 </div>
@@ -252,8 +211,10 @@ const RunningProgress = ({t, elapsedMs, visitedCount, onCancel}) => {
     );
 };
 
-// Visible alert banner for error (assertive red) and info (neutral) statuses. Returns null when
-// the current status is neither, so the main render doesn't carry these branches.
+// Visible banner for error (assertive red), success (polite green, A-12) and info (polite neutral)
+// statuses. Returns null otherwise so the main render doesn't carry these branches.
+// A-3: only errors are urgent — they use role="alert" (assertive). Info (cancelled/timeout) and
+// success are non-urgent and use role="status" (polite) so AT announces them without interrupting.
 const StatusBanner = ({t, status}) => {
     if (ERROR_STATUSES.includes(status)) {
         return (
@@ -263,9 +224,19 @@ const StatusBanner = ({t, status}) => {
         );
     }
 
-    if (status === INFO_CANCELLED || status === INFO_TIMEOUT) {
+    if (SUCCESS_STATUSES.includes(status)) {
+        // A-12: a visible success confirmation parallel to the error banner, so sighted users get
+        // explicit success feedback (not only the sr-only live region).
         return (
-            <div role="alert" className={`${styles.js_alert} ${styles['js_alert--info']}`}>
+            <div role="status" className={`${styles.js_alert} ${styles['js_alert--success']}`}>
+                {t(`label.${status}`)}
+            </div>
+        );
+    }
+
+    if (INFO_STATUSES.includes(status)) {
+        return (
+            <div role="status" className={`${styles.js_alert} ${styles['js_alert--info']}`}>
                 {t(`label.${status}`)}
             </div>
         );
@@ -303,9 +274,13 @@ const FlamegraphView = ({t, tree, focused, focusUrl, describeMetric, flameData, 
                     </a>
                 )}
                 {focused && focused.path && (
-                    /* Exclude the clicked/focused node (and its subtree) from future computations. */
+                    /*
+                      Exclude the clicked/focused node (and its subtree) from future computations.
+                      A-6: js_targetSize guarantees a 44x44 CSS px target (AAA 2.5.5).
+                    */
                     <Button
                         size="default"
+                        className={styles.js_targetSize}
                         label={t('label.excludePath')}
                         onClick={() => onExclude(focused.path)}
                     />
@@ -313,14 +288,15 @@ const FlamegraphView = ({t, tree, focused, focusUrl, describeMetric, flameData, 
             </div>
             {flameData && (
                 /*
-                  C-1: role="group" + aria-label wraps the mouse-only flamegraph so AT users
-                  receive a meaningful description rather than an unlabelled SVG.
+                  A-5: role="img" + aria-label wraps the mouse-only, non-keyboard-operable flamegraph
+                  so AT users get a meaningful single description rather than an unlabelled SVG or a
+                  navigable group. The Tree table view is the keyboard-accessible equivalent.
                 */
                 <div
                     ref={containerRef}
                     data-testid="jcrstats-flamegraph-react"
                     className={styles.js_flamegraph_react}
-                    role="group"
+                    role="img"
                     aria-label={t('label.interactiveTitle')}
                 >
                     <FlameGraph data={flameData} height={dimensions.height} width={dimensions.width} onChange={onFocusChange}/>
@@ -344,7 +320,13 @@ const ExclusionsPanel = ({t, exclusions, onRemove}) => {
                 {exclusions.map(excludedPath => (
                     <li key={excludedPath} className={styles.js_exclusions_item}>
                         <span className={styles.js_exclusions_path}>{excludedPath}</span>
-                        <Button size="default" label={t('label.removeExclusion')} onClick={() => onRemove(excludedPath)}/>
+                        {/* A-4: visible label stays compact ("Remove"); aria-label carries the unique path. */}
+                        <Button
+                            size="default"
+                            label={t('label.removeExclusion')}
+                            aria-label={t('label.removeExclusionLabel', {path: excludedPath})}
+                            onClick={() => onRemove(excludedPath)}
+                        />
                     </li>
                 ))}
             </ul>
@@ -352,25 +334,67 @@ const ExclusionsPanel = ({t, exclusions, onRemove}) => {
     );
 };
 
-// Lists saved execution snapshots (most recent first) with a per-row View control that reloads the
-// stored JSON into the viewer. Hidden when there are none.
-const SnapshotsPanel = ({t, snapshots, onView, onCompare}) => {
+// Renders one snapshot's human-readable metadata line (E-1): created date + stored size, falling
+// back to an "unknown date" label when the server reports no timestamp.
+const SnapshotMeta = ({t, snapshot}) => {
+    const date = formatTimestamp(snapshot.createdAt) || t('label.snapshotDateUnknown');
+    const size = formatBytes(snapshot.size);
+    return <span className={styles.js_snapshot_meta}>{t('label.snapshotMeta', {date, size})}</span>;
+};
+
+// Lists saved execution snapshots (most recent first). Each row has View (load as current tree),
+// Compare (load as diff baseline against the current tree) and Delete controls. Hidden when empty.
+const SnapshotsPanel = ({t, snapshots, hasCurrent, onView, onCompare, onDelete}) => {
     if (!snapshots.length) {
         return null;
     }
 
     return (
-        <section className={styles.js_exclusions} aria-label={t('label.savedExecutions')}>
+        <section className={styles.js_exclusions} aria-label={t('label.savedExecutions')} data-testid="jcrstats-snapshots">
             <Typography className={styles.js_label}>{t('label.savedExecutions')}</Typography>
             <Typography className={styles.js_hint}>{t('label.snapshotsHint')}</Typography>
             <ul className={styles.js_exclusions_list}>
                 {snapshots.map(snapshot => (
                     <li key={snapshot.path} className={styles.js_exclusions_item}>
-                        <span className={styles.js_exclusions_path}>{snapshot.name}</span>
+                        <span className={styles.js_snapshot_main}>
+                            <span className={styles.js_exclusions_path}>{snapshot.name}</span>
+                            {/* E-1: human-readable date + size beside the bare filename. */}
+                            <SnapshotMeta t={t} snapshot={snapshot}/>
+                        </span>
                         <span className={styles.js_snapshot_actions}>
-                            {/* View loads it as the current tree; Compare loads it as the diff baseline. */}
-                            <Button size="default" label={t('label.viewSnapshot')} onClick={() => onView(snapshot.url)}/>
-                            <Button size="default" label={t('label.compareSnapshot')} onClick={() => onCompare(snapshot.url)}/>
+                            {/* A-4: visible labels stay short; aria-labels carry the unique snapshot name. */}
+                            <Button
+                                size="default"
+                                label={t('label.viewSnapshot')}
+                                aria-label={t('label.viewSnapshotLabel', {name: snapshot.name})}
+                                onClick={() => onView(snapshot.url)}
+                            />
+                            {/*
+                              E-4: Compare diffs the snapshot against the CURRENT tree, so it is
+                              disabled (with an explanatory title/aria-label) until a current result
+                              exists. E-5: rendered with the subtler "default" variant so View reads
+                              as the primary action and Compare as secondary.
+                            */}
+                            <Button
+                                size="default"
+                                variant="ghost"
+                                label={t('label.compareSnapshot')}
+                                aria-label={hasCurrent ?
+                                    t('label.compareSnapshotLabel', {name: snapshot.name}) :
+                                    t('label.compareSnapshotDisabledLabel', {name: snapshot.name})}
+                                title={hasCurrent ? undefined : t('label.compareDisabledHint')}
+                                isDisabled={!hasCurrent}
+                                onClick={() => onCompare(snapshot.url)}
+                            />
+                            {/* E-2: delete the stored snapshot, then refetch the list. */}
+                            <Button
+                                size="default"
+                                variant="ghost"
+                                color="danger"
+                                label={t('label.deleteSnapshot')}
+                                aria-label={t('label.deleteSnapshotLabel', {name: snapshot.name})}
+                                onClick={() => onDelete(snapshot.path, snapshot.name)}
+                            />
                         </span>
                     </li>
                 ))}
@@ -382,7 +406,10 @@ const SnapshotsPanel = ({t, snapshots, onView, onCompare}) => {
 export const JcrStatsAdmin = () => {
     const {t} = useTranslation('jcr-stats');
     const [path, setPath] = useState(DEFAULT_PATH);
-    const [pathError, setPathError] = useState(false);
+    // E-7: holds the i18n key of the path field error (or null when valid), so the field-level
+    // message is actionable and specific (missing vs. not absolute) rather than a single generic one.
+    const [pathErrorKey, setPathErrorKey] = useState(null);
+    const pathError = pathErrorKey !== null;
     const [metric, setMetric] = useState(METRIC_SIZE);
     const [view, setView] = useState(VIEW_FLAMEGRAPH);
     const [status, setStatus] = useState(null);
@@ -395,10 +422,20 @@ export const JcrStatsAdmin = () => {
     const [, setNowTick] = useState(0);
     const serverElapsedRef = useRef({base: 0, at: 0});
     const pollStartRef = useRef(0);
+    // C-2: startedAt of the run we are now watching. Any polled status whose server startedAt is
+    // OLDER than this belongs to a previous run and must be ignored (stale-result guard). Updated
+    // from the live status as soon as the server reports the new run.
+    const runStartedAtRef = useRef(0);
+    // C-4: monotonically increasing compute generation. Captured by applyComputedResult so a slow
+    // result fetch from a prior run cannot overwrite the state of a newer run (write-after-restart).
+    const generationRef = useRef(0);
     const containerRef = useRef(null);
     const fileInputRef = useRef(null);
     // H-5: ref for the results region so focus can be moved to it on view change
     const resultsRegionRef = useRef(null);
+    // A-1: set only by handleViewChange so focus moves on an explicit user view switch, NOT when a
+    // computation completing programmatically flips the view (which would steal focus without a gesture).
+    const viewChangeInitiatedRef = useRef(false);
     // Tracks real unmount so an in-flight result fetch is only discarded when the component is gone —
     // NOT when `computing` flips to false as part of completing the very computation we are reading.
     const isMountedRef = useRef(true);
@@ -409,7 +446,8 @@ export const JcrStatsAdmin = () => {
     }, []);
 
     useEffect(() => {
-        document.title = `${t('label.title')} — Jahia Administration`;
+        // C-6: the suffix is translatable rather than a hardcoded English string.
+        document.title = `${t('label.title')}${t('label.titleSuffix')}`;
     }, [t]);
 
     const [startCompute] = useMutation(COMPUTE);
@@ -417,18 +455,22 @@ export const JcrStatsAdmin = () => {
     const [addExclusion] = useMutation(ADD_EXCLUSION);
     const [removeExclusion] = useMutation(REMOVE_EXCLUSION);
     const [saveSnapshot] = useMutation(SAVE_SNAPSHOT);
+    const [deleteSnapshot] = useMutation(DELETE_SNAPSHOT);
     const {data: exclusionsData, refetch: refetchExclusions} = useQuery(GET_EXCLUSIONS, {fetchPolicy: 'network-only'});
     const exclusions = readExclusions(exclusionsData);
     const {handleExclude, handleRemoveExclusion} = useExclusionActions({addExclusion, removeExclusion, refetchExclusions, setStatus});
     const {data: snapshotsData, refetch: refetchSnapshots} = useQuery(GET_SNAPSHOTS, {fetchPolicy: 'network-only'});
     const snapshots = readSnapshots(snapshotsData);
     const {handleViewSnapshot, handleCompareSnapshot} = useSnapshotLoader({setFocused, setTree, setTreePath, setView, setStatus, setBaseline});
-    // Refresh the saved-execution list whenever a run finishes (a snapshot is auto-saved on completion).
+    const {handleDeleteSnapshot} = useSnapshotDeleter({t, deleteSnapshot, refetchSnapshots, setStatus});
+    // C-1: refresh the saved-execution list only after a SUCCESSFUL computation (a snapshot is
+    // auto-saved on completion). Keying on `computing` flipping to false also fired on mount,
+    // cancel, timeout and file-load — an over-broad refetch.
     useEffect(() => {
-        if (!computing) {
+        if (status === SUCCESS_COMPUTED) {
             refetchSnapshots();
         }
-    }, [computing, refetchSnapshots]);
+    }, [status, refetchSnapshots]);
     const [fetchResult] = useLazyQuery(GET_RESULT, {fetchPolicy: 'network-only'});
     const [fetchStatus] = useLazyQuery(GET_STATUS, {fetchPolicy: 'network-only'});
     // While a computation runs, poll its status; the heavy traversal happens server-side off-request.
@@ -481,10 +523,15 @@ export const JcrStatsAdmin = () => {
         // C-2 (code-quality): cancellation is gated on actual unmount (isMountedRef), not on this
         // effect's teardown — completing the computation flips `computing` to false, which would
         // otherwise tear this effect down and cancel the result fetch we just kicked off.
+        const generationAtPoll = generationRef.current;
         handlePolledStatus(current, {
             pollStartMs: pollStartRef.current,
             fetchResult,
             isCancelled: () => !isMountedRef.current,
+            // C-2: ignore a status still bearing the previous run's startedAt.
+            staleStartedAt: runStartedAtRef.current,
+            // C-4: a result fetch is stale once a newer compute generation has begun.
+            isStale: () => generationRef.current !== generationAtPoll,
             setters: {
                 setComputing,
                 setStatus,
@@ -542,9 +589,17 @@ export const JcrStatsAdmin = () => {
             });
     }, [fetchStatus]);
 
-    // H-5: when view changes, move focus to the results region so keyboard/AT users land in the
-    // new content. A useEffect keyed on `view` is more reliable than a setTimeout under React 18.
+    // H-5 / A-1: when the user explicitly switches the view, move focus to the results region so
+    // keyboard/AT users land in the new content. Gated on viewChangeInitiatedRef so a programmatic
+    // view change (e.g. a computation completing and switching to the flamegraph, or the initial
+    // mount) does NOT relocate focus without a user gesture (WCAG 2.2 — no focus change on the
+    // completion of an async computation).
     useEffect(() => {
+        if (!viewChangeInitiatedRef.current) {
+            return;
+        }
+
+        viewChangeInitiatedRef.current = false;
         if (resultsRegionRef.current) {
             resultsRegionRef.current.focus();
         }
@@ -563,13 +618,15 @@ export const JcrStatsAdmin = () => {
     };
 
     const handleViewChange = e => {
+        // A-1: only an explicit user-initiated view change may relocate focus to the results region.
+        viewChangeInitiatedRef.current = true;
         setView(e.target.value);
     };
 
     const handlePathChange = e => {
         setPath(e.target.value);
         if (pathError) {
-            setPathError(false);
+            setPathErrorKey(null);
         }
     };
 
@@ -590,14 +647,27 @@ export const JcrStatsAdmin = () => {
         // H-3 (ergonomy): block a blank path instead of silently traversing the whole repo from '/'.
         const targetPath = (path || '').trim();
         if (!targetPath) {
-            setPathError(true);
+            setPathErrorKey('pathRequired');
+            setStatus(null);
             return;
         }
 
-        setPathError(false);
+        // E-7: a JCR path is absolute; reject a relative one up front with an actionable message.
+        if (!targetPath.startsWith('/')) {
+            setPathErrorKey('pathMustBeAbsolute');
+            setStatus(null);
+            return;
+        }
+
+        setPathErrorKey(null);
         setStatus(null);
         setFocused(null);
         setVisitedCount(0);
+        // C-2: remember the previous run's startedAt so the poll ignores a stale status still
+        // carrying it. C-4: bump the compute generation so a slow prior-run result fetch is dropped.
+        const lastStatus = statusData && statusData.jcrStats && statusData.jcrStats.status;
+        runStartedAtRef.current = (lastStatus && Number(lastStatus.startedAt)) || 0;
+        generationRef.current += 1;
         serverElapsedRef.current = {base: 0, at: Date.now()};
         pollStartRef.current = Date.now();
         try {
@@ -616,12 +686,15 @@ export const JcrStatsAdmin = () => {
     const handleCancel = async () => {
         try {
             await cancelComputation();
+            setComputing(false);
+            setStatus(INFO_CANCELLED);
         } catch (err) {
+            // E-6: the cancel request itself failed, so don't claim the computation was cancelled.
+            // Stop watching but warn the user it may still be running on the server.
             console.error('[jcr-stats] failed to cancel computation', err);
+            setComputing(false);
+            setStatus(INFO_CANCEL_MAYBE);
         }
-
-        setComputing(false);
-        setStatus(INFO_CANCELLED);
     };
 
     const handleSave = () => {
@@ -690,16 +763,28 @@ export const JcrStatsAdmin = () => {
             setStatus(SUCCESS_LOADED);
             // Persist the loaded data as a server snapshot so it joins the saved-executions history.
             const json = JSON.stringify({format: SAVE_FORMAT, version: 1, path: loadedPath, tree: loaded});
+            // C-3: on save failure, surface it (ERROR_SAVE) instead of only console.error while still
+            // claiming success; refetch wrapped in an arrow so an Apollo refetch signature change can't
+            // pass the resolved snapshot value as refetch variables.
             saveSnapshot({variables: {json}})
-                .then(refetchSnapshots)
-                .catch(err => console.error('[jcr-stats] failed to store loaded snapshot', err));
+                .then(({data}) => {
+                    if (data && data.jcrStats && data.jcrStats.saveSnapshot) {
+                        refetchSnapshots();
+                    } else {
+                        setStatus(ERROR_SAVE);
+                    }
+                })
+                .catch(err => {
+                    console.error('[jcr-stats] failed to store loaded snapshot', err);
+                    setStatus(ERROR_SAVE);
+                });
         }, ERROR_LOAD);
     };
 
     const focusUrl = focused ? buildJContentUrl(focused.path) : null;
     const isError = ERROR_STATUSES.includes(status);
     const isSuccess = SUCCESS_STATUSES.includes(status);
-    const isInfo = status === INFO_CANCELLED || status === INFO_TIMEOUT;
+    const isInfo = INFO_STATUSES.includes(status);
 
     return (
         <div className={styles.js_container}>
@@ -739,7 +824,7 @@ export const JcrStatsAdmin = () => {
                     />
                     {pathError && (
                         <span id="jcrstats-path-error" role="alert" className={styles.js_fieldError}>
-                            {t('label.pathRequired')}
+                            {t(`label.${pathErrorKey}`)}
                         </span>
                     )}
                     <label className={styles.js_label} htmlFor="jcrstats-metric">{t('label.metric')}</label>
@@ -748,7 +833,21 @@ export const JcrStatsAdmin = () => {
                         <option value={METRIC_NODES}>{t('label.metricNodes')}</option>
                     </select>
                     <Button size="big" color="accent" icon={<Bar/>} label={t('label.compute')} isDisabled={computing} onClick={handleCompute}/>
-                    <Button size="big" icon={<Upload/>} label={t('label.load')} isDisabled={computing} onClick={openLoadDialog}/>
+                    {/*
+                      A-7: the Load button programmatically triggers the sr-only file input; give it an
+                      aria-label spelling out its purpose ("Load data — load statistics snapshot file")
+                      since the visible "Load data" label alone doesn't announce what it opens.
+                      E-8: title explains why it is disabled during a computation.
+                    */}
+                    <Button
+                        size="big"
+                        icon={<Upload/>}
+                        label={t('label.load')}
+                        aria-label={`${t('label.load')} — ${t('label.loadFileLabel')}`}
+                        title={computing ? t('label.loadDisabledHint') : undefined}
+                        isDisabled={computing}
+                        onClick={openLoadDialog}
+                    />
                     {/*
                       H-3: Hidden file input is clipped (sr-only) rather than display:none so AT can
                       discover it, with an associated <label>. The Load button triggers it programmatically.
@@ -771,7 +870,14 @@ export const JcrStatsAdmin = () => {
 
             <ExclusionsPanel t={t} exclusions={exclusions} onRemove={handleRemoveExclusion}/>
 
-            <SnapshotsPanel t={t} snapshots={snapshots} onView={handleViewSnapshot} onCompare={handleCompareSnapshot}/>
+            <SnapshotsPanel
+                t={t}
+                snapshots={snapshots}
+                hasCurrent={Boolean(tree)}
+                onView={handleViewSnapshot}
+                onCompare={handleCompareSnapshot}
+                onDelete={handleDeleteSnapshot}
+            />
 
             {computing && (
                 <RunningProgress

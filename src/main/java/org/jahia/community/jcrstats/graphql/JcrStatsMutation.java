@@ -53,6 +53,17 @@ public class JcrStatsMutation {
     }
 
     @GraphQLField
+    @GraphQLName("deleteSnapshot")
+    @GraphQLDescription("Deletes a stored execution snapshot. The path must be a file directly under the snapshots folder; any other path is rejected. Returns true if a snapshot was found and deleted.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean deleteSnapshot(
+            @GraphQLName("path")
+            @GraphQLDescription("JCR path of the snapshot file to delete (must be under the jcr-stats snapshots folder)")
+            String path) {
+        return new JcrStatsComputer().deleteSnapshot(path);
+    }
+
+    @GraphQLField
     @GraphQLName("addExclusion")
     @GraphQLDescription("Adds an absolute JCR path to the exclusion list: the path and its whole subtree are skipped in future computations. Persisted to the OSGi configuration file. Returns true on success, false if the path is invalid or could not be saved.")
     @GraphQLRequiresPermission("jcrStatsAdmin")

@@ -6,7 +6,7 @@ This file provides essential context for AI assistants working on the jcr-stats 
 
 **jcr-stats** is a Jahia DX module for analyzing and visualizing JCR subtree disk usage and node distribution. It consists of a Java backend (JCR traversal engine, GraphQL API), a React admin UI, and a Karaf shell command.
 
-**Version:** 2.1.0-SNAPSHOT  
+**Version:** 2.1.2-SNAPSHOT  
 **Root Package:** `org.jahia.community.jcrstats`  
 **Module ID:** `jcr-stats`
 
@@ -19,6 +19,15 @@ This file provides essential context for AI assistants working on the jcr-stats 
 - `JcrStatsComputer` — Core traversal and flamegraph generation engine; shared by Karaf, GraphQL, and admin UI
   - `computeStats(String path)` — Returns NodeStats tree (read-only)
   - `computeAndWriteFlamegraph(String path, boolean deleteTemporaryFile)` — Returns ComputeResult with flamegraph HTML path
+  - `cancel()` — Stops a running computation gracefully
+  - `getStatus()` — Returns current JcrStatsStatus
+
+- `JcrStatsConfig` — OSGi ManagedService for path exclusions configuration
+  - Reads/writes `jcrStats.excludedPaths` from `${karaf.etc}/org.jahia.community.jcrstats.cfg`
+
+- `JcrStatsService` — Snapshot persistence and retrieval
+  - Saves snapshots to `/sites/systemsite/files/jcr-stats/snapshots/`
+  - Lists saved execution history
 
 - `ComputeResult` — Immutable result (path, totalSize, nodeCount, flamegraphPath)
 
@@ -28,11 +37,11 @@ This file provides essential context for AI assistants working on the jcr-stats 
 
 **GraphQL Package:** `org.jahia.community.jcrstats.graphql`
 
-- `JcrStatsQuery` — Query operations: size(path), nodeCount(path), tree(path, maxDepth), reports()
+- `JcrStatsQuery` — Query operations: size(path), nodeCount(path), tree(path, maxDepth), status(), result(maxDepth), exclusions(), snapshots(), reports()
   - All decorated with `@GraphQLRequiresPermission("jcrStatsAdmin")`
   - DEFAULT_MAX_DEPTH = 6 (critical: couples with frontend MAX_DEPTH in JcrStats.jsx)
 
-- `JcrStatsMutation` — Mutation: computeSize(path, deleteTemporaryFile) → GqlJcrStatsComputeResult
+- `JcrStatsMutation` — Mutations: compute(path), cancel(), addExclusion(path), removeExclusion(path), saveSnapshot(name), deleteSnapshot(path), computeSize(path, deleteTemporaryFile)
 
 - `JcrStatsQueryExtension`, `JcrStatsMutationExtension` — Extension providers that register the above under `jcrStats` namespace root
 
@@ -51,7 +60,7 @@ This file provides essential context for AI assistants working on the jcr-stats 
   - **Critical constant:** MAX_DEPTH = 6 (must match JcrStatsQuery.DEFAULT_MAX_DEPTH and getTree query nesting depth)
 
 - `register.jsx` — Admin route registration
-  - Registers 'jcrStatsExecution' adminRoute at /jahia/administration/jcrStatsExecution
+  - Registers 'jcrStats' adminRoute at /jahia/administration/jcrStats
   - Requires jcrStatsAdmin permission
 
 - `JcrStats.gql.js` — GraphQL operations
@@ -109,13 +118,14 @@ bash ci.startup.sh
 
 ### MAX_DEPTH = 6
 
-The flame graph tree depth is hardcoded in three places and must stay in sync:
+The flame graph tree depth is hardcoded in four places and must stay in sync:
 
 1. **JcrStatsQuery.java**: `DEFAULT_MAX_DEPTH = 6`
-2. **JcrStats.jsx**: `MAX_DEPTH = 6`
-3. **JcrStats.gql.js**: getTree query nesting (6 levels of `children { ... }`)
+2. **JcrStatsComputer.java**: `SNAPSHOT_MAX_DEPTH = 6`
+3. **JcrStats.jsx**: `MAX_DEPTH = 6`
+4. **JcrStats.gql.js**: getTree query nesting (6 levels of `children { ... }`)
 
-If increasing max depth, update all three and test that response payloads remain reasonable.
+If increasing max depth, update all four locations and test that response payloads and saved snapshots remain reasonable.
 
 ### jcrStatsAdmin Permission
 

@@ -3,6 +3,7 @@ package org.jahia.community.jcrstats.graphql;
 import graphql.annotations.annotationTypes.GraphQLDescription;
 import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
+import org.jahia.api.Constants;
 import org.jahia.community.jcrstats.JcrStatsComputer;
 import org.jahia.community.jcrstats.JcrStatsConfig;
 import org.jahia.community.jcrstats.JcrStatsService;
@@ -96,10 +97,12 @@ public class JcrStatsQuery {
     public GqlJcrStatsStatus status() {
         final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
         if (service == null) {
-            return new GqlJcrStatsStatus(false, null, null, false, 0L, 0L, 0L, false);
+            return new GqlJcrStatsStatus(false, null, null, false,
+                    new GqlJcrStatsStatus.Progress(0L, 0L, 0L), false);
         }
         return new GqlJcrStatsStatus(service.isRunning(), service.getLastPath(), service.getLastError(), service.getLastResult() != null,
-                service.getStartedAt(), service.getElapsedMs(), service.getVisitedCount(), service.isLastRunCancelled());
+                new GqlJcrStatsStatus.Progress(service.getStartedAt(), service.getElapsedMs(), service.getVisitedCount()),
+                service.isLastRunCancelled());
     }
 
     @GraphQLField
@@ -181,7 +184,8 @@ public class JcrStatsQuery {
                 final JCRNodeIteratorWrapper nodes = query.execute().getNodes();
                 while (nodes.hasNext()) {
                     final JCRNodeWrapper node = (JCRNodeWrapper) nodes.next();
-                    snapshots.add(new GqlJcrStatsReport(node.getPath(), node.getName(), JcrStatsComputer.flamegraphUrl(node.getPath())));
+                    snapshots.add(new GqlJcrStatsReport(node.getPath(), node.getName(),
+                            JcrStatsComputer.flamegraphUrl(node.getPath()), createdAtMillis(node), fileSize(node)));
                 }
                 return snapshots;
             });
@@ -189,6 +193,33 @@ public class JcrStatsQuery {
             LOGGER.error("Failed to list jcr-stats execution snapshots", e);
             return Collections.emptyList();
         }
+    }
+
+    /** Epoch millis of a file node's {@code jcr:created}, or 0 if absent/unreadable. */
+    private static long createdAtMillis(JCRNodeWrapper node) {
+        try {
+            if (node.hasProperty(Constants.JCR_CREATED)) {
+                return node.getProperty(Constants.JCR_CREATED).getDate().getTimeInMillis();
+            }
+        } catch (RepositoryException e) {
+            LOGGER.warn("Could not read jcr:created of {}: {}", node.getPath(), e.toString());
+        }
+        return 0L;
+    }
+
+    /** Size in bytes of a {@code jnt:file}'s binary ({@code jcr:content/jcr:data}), or -1 if unreadable. */
+    private static long fileSize(JCRNodeWrapper node) {
+        try {
+            if (node.hasNode(Constants.JCR_CONTENT)) {
+                final JCRNodeWrapper content = node.getNode(Constants.JCR_CONTENT);
+                if (content.hasProperty(Constants.JCR_DATA)) {
+                    return content.getProperty(Constants.JCR_DATA).getLength();
+                }
+            }
+        } catch (RepositoryException e) {
+            LOGGER.warn("Could not read size of {}: {}", node.getPath(), e.toString());
+        }
+        return -1L;
     }
 
     @GraphQLName("JcrStatsStatus")
@@ -199,20 +230,33 @@ public class JcrStatsQuery {
         private final String path;
         private final String error;
         private final boolean hasResult;
-        private final long startedAt;
-        private final long elapsedMs;
-        private final long visitedCount;
+        private final Progress progress;
         private final boolean cancelled;
 
+        /**
+         * Immutable holder grouping the three live-progress fields, so {@link GqlJcrStatsStatus}'s
+         * constructor stays within Sonar's 7-parameter limit (java:S107). Purely internal — the
+         * GraphQL schema is unchanged; the progress fields are still exposed as flat getters below.
+         */
+        public static final class Progress {
+            private final long startedAt;
+            private final long elapsedMs;
+            private final long visitedCount;
+
+            public Progress(long startedAt, long elapsedMs, long visitedCount) {
+                this.startedAt = startedAt;
+                this.elapsedMs = elapsedMs;
+                this.visitedCount = visitedCount;
+            }
+        }
+
         public GqlJcrStatsStatus(boolean running, String path, String error, boolean hasResult,
-                long startedAt, long elapsedMs, long visitedCount, boolean cancelled) {
+                Progress progress, boolean cancelled) {
             this.running = running;
             this.path = path;
             this.error = error;
             this.hasResult = hasResult;
-            this.startedAt = startedAt;
-            this.elapsedMs = elapsedMs;
-            this.visitedCount = visitedCount;
+            this.progress = progress;
             this.cancelled = cancelled;
         }
 
@@ -248,21 +292,21 @@ public class JcrStatsQuery {
         @GraphQLName("startedAt")
         @GraphQLDescription("Epoch millis when the current/last computation started (0 if none)")
         public long getStartedAt() {
-            return startedAt;
+            return progress.startedAt;
         }
 
         @GraphQLField
         @GraphQLName("elapsedMs")
         @GraphQLDescription("Elapsed time in ms: live while running, otherwise the last run's duration")
         public long getElapsedMs() {
-            return elapsedMs;
+            return progress.elapsedMs;
         }
 
         @GraphQLField
         @GraphQLName("visitedCount")
         @GraphQLDescription("Number of nodes visited so far (live progress; no total is known up front)")
         public long getVisitedCount() {
-            return visitedCount;
+            return progress.visitedCount;
         }
 
         @GraphQLField
@@ -339,11 +383,19 @@ public class JcrStatsQuery {
         private final String path;
         private final String name;
         private final String url;
+        private final long createdAt;
+        private final long size;
 
         public GqlJcrStatsReport(String path, String name, String url) {
+            this(path, name, url, 0L, -1L);
+        }
+
+        public GqlJcrStatsReport(String path, String name, String url, long createdAt, long size) {
             this.path = path;
             this.name = name;
             this.url = url;
+            this.createdAt = createdAt;
+            this.size = size;
         }
 
         @GraphQLField
@@ -365,6 +417,20 @@ public class JcrStatsQuery {
         @GraphQLDescription("Browser URL that renders this flamegraph")
         public String getUrl() {
             return url;
+        }
+
+        @GraphQLField
+        @GraphQLName("createdAt")
+        @GraphQLDescription("Epoch millis when the file was created (jcr:created), or 0 if unknown")
+        public long getCreatedAt() {
+            return createdAt;
+        }
+
+        @GraphQLField
+        @GraphQLName("size")
+        @GraphQLDescription("Size of the stored file in bytes, or -1 if unknown")
+        public long getSize() {
+            return size;
         }
     }
 }

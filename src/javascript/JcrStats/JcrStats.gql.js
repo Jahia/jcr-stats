@@ -72,7 +72,17 @@ export const GET_SNAPSHOTS = gql`
                 path
                 name
                 url
+                createdAt
+                size
             }
+        }
+    }
+`;
+
+export const DELETE_SNAPSHOT = gql`
+    mutation JcrStatsDeleteSnapshot($path: String!) {
+        jcrStats {
+            deleteSnapshot(path: $path)
         }
     }
 `;

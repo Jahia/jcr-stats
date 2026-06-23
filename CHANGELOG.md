@@ -22,9 +22,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The "Cancel" button now actually stops the computation** — Previously it only stopped client-side polling while the server job kept running to completion (the message even said so). It now calls `jcrStats.cancel`, which stops the server-side traversal; the UI reports "Computation cancelled."
 - **Whole-site traversal no longer aborts on un-listable branches** — Walking a subtree that descends into an external data-source mount whose child names are not valid JCR paths (e.g. `cloud-dumps` nodes named with an ISO-8601 timestamp, where `:` is the namespace-prefix separator) raised `RepositoryException: Invalid path … ':' not valid name character` from the eager `getNodes()` listing and aborted the entire computation. When direct listing fails, the traversal now falls back to an `ISCHILDNODE` query whose path is escaped via `JCRContentUtils.sqlEncode`, recovering the valid children of that node instead of dropping the whole branch (the single un-representable node — which cannot be a JCR node at all — is simply omitted). A `WARN` is logged; only if the escaped query also fails is the node's subtree skipped. The hard `MAX_VISITED_NODES` safety limit still aborts as before.
 
+#### Review hardening (multi-dimensional blind review)
+
+- **Snapshot/flamegraph writes use a dedicated system session** via `JCRTemplate.doExecuteWithSystemSession` instead of the request-bound `getCurrentSystemSession`, fixing a thread-safety/lifecycle hazard when writing from the background computation thread.
+- **Cancellation classified by exception type** (`CancelledException`) rather than a flag, so a genuine error occurring after a cancel request is no longer mis-logged as a clean cancel.
+- **Flamegraph HTML write aborts on a failed header/footer** instead of uploading a half-written file.
+- **`jsonEscape` now escapes lone UTF-16 surrogates**; `jcr:data` length reads guard against multi-valued properties; `exportedAt` uses UTC `Instant`.
+- **Accessibility (WCAG 2.2 AAA):** focus is no longer relocated on async completion (only on user-initiated view changes); the reduced-motion override fully stops the progress-bar animation; info/success use `role="status"` (errors keep `role="alert"`); icon/list buttons have descriptive accessible names; the flamegraph uses `role="img"`; progressbar exposes `aria-valuemin/max`; heading reflows at 400% zoom; border/link colours raised to AAA contrast.
+- **Frontend correctness:** a stale previous-run status can no longer apply its result to a new run (guarded by `startedAt`/a generation counter); the saved-executions refetch is scoped to successful computations; load-as-snapshot failures surface to the user.
+- **Reliability:** replaced a backtracking-prone path-validation regex with linear string checks (Sonar S5998).
+
+### Changed
+
+- **Saved executions list** now shows each run's date and size, with a per-row **Delete**; snapshots are capped at the 50 most recent (oldest pruned on write). "Compare" is disabled until a current result is loaded, and loading a file states it was saved to history.
+
+### Security
+
+- **`saveSnapshot` validates the uploaded envelope structurally** (parsed JSON object with `format == jcr-stats-flamegraph` and a `tree`) instead of a substring match; **`deleteSnapshot` only deletes within the snapshots folder**; excluded-path validation adds a length cap and stricter absolute-path checks.
+
 ### Tests
 
-- Added regression tests to `JcrStatsTraversalTest`: a node whose children cannot be listed at all is skipped (no exception propagates), and a single failing child no longer drops its siblings.
+- Added regression tests to `JcrStatsTraversalTest`: a node whose children cannot be listed at all is skipped (no exception propagates), a single failing child no longer drops its siblings, and the escaped-query fallback recovers valid children when direct listing fails.
+- Raised coverage across the backend (`saveSnapshot` validation, `cancel`/`isLastRunCancelled`, `jsonEscape`/`buildSnapshotJson` edge cases, exclusion edge cases) and the frontend (the `handlePolledStatus`/`applyComputedResult` controller, status edge cases) — 87 Java + 106 JS tests. New Cypress specs cover the cancel, snapshot View/Compare/Delete, and exclusion flows.
 
 ---
 

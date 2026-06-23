@@ -111,6 +111,39 @@ public class JcrStatsConfigTest {
     }
 
     @Test
+    public void addExclusion_alreadyPresent_isNoOpReturningTrue() {
+        assertThat(config.addExclusion("/a")).isTrue();
+
+        // Adding the same path again is a no-op: it must still return true and not change the set.
+        assertThat(config.addExclusion("/a")).isTrue();
+        assertThat(config.getExcludedPaths()).containsExactly("/a");
+    }
+
+    @Test
+    public void addExclusion_whenKarafEtcUnset_failsToPersistAndReturnsFalse() {
+        System.clearProperty("karaf.etc");
+
+        assertThat(config.addExclusion("/needs/persist")).isFalse();
+    }
+
+    @Test
+    public void isValidPath_rejectsOverlongPath() {
+        StringBuilder sb = new StringBuilder("/");
+        for (int i = 0; i < JcrStatsConfig.MAX_PATH_LENGTH; i++) {
+            sb.append('a');
+        }
+        assertThat(sb.length()).isGreaterThan(JcrStatsConfig.MAX_PATH_LENGTH);
+        assertThat(JcrStatsConfig.isValidPath(sb.toString())).isFalse();
+    }
+
+    @Test
+    public void isValidPath_rejectsTrailingSlashAndDoubleSlash() {
+        assertThat(JcrStatsConfig.isValidPath("/")).isFalse();          // no real segment
+        assertThat(JcrStatsConfig.isValidPath("/a/")).isFalse();        // trailing slash → empty segment
+        assertThat(JcrStatsConfig.isValidPath("/a//b")).isFalse();      // empty middle segment
+    }
+
+    @Test
     public void removeExclusion_dropsPathAndRewritesFile() throws IOException {
         config.addExclusion("/a");
         config.addExclusion("/b");

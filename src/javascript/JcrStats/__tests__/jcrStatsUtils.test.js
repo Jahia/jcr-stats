@@ -5,6 +5,7 @@ import {
     flatten,
     buildJContentUrl,
     formatDuration,
+    formatTimestamp,
     diffTrees,
     signedBytes,
     METRIC_SIZE,
@@ -324,6 +325,30 @@ describe('signedBytes', () => {
 
     it('formats a large negative delta correctly', () => {
         expect(signedBytes(-KIB * KIB)).toBe('-1.0 MB');
+    });
+});
+
+describe('formatTimestamp', () => {
+    it('returns null for missing / non-positive / non-finite input', () => {
+        expect(formatTimestamp(0)).toBeNull();
+        expect(formatTimestamp(-1)).toBeNull();
+        expect(formatTimestamp(null)).toBeNull();
+        expect(formatTimestamp(undefined)).toBeNull();
+        expect(formatTimestamp(NaN)).toBeNull();
+        expect(formatTimestamp(Infinity)).toBeNull();
+    });
+
+    it('formats a valid epoch-millis timestamp into a non-empty string', () => {
+        const out = formatTimestamp(Date.UTC(2026, 5, 23, 12, 0, 0), 'en-US');
+        expect(typeof out).toBe('string');
+        expect(out.length).toBeGreaterThan(0);
+        // The year should appear regardless of locale formatting differences.
+        expect(out).toContain('2026');
+    });
+
+    it('coerces numeric strings to a timestamp', () => {
+        const ms = Date.UTC(2026, 0, 1, 0, 0, 0);
+        expect(formatTimestamp(String(ms), 'en-US')).toContain('2026');
     });
 });
 

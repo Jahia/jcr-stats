@@ -4,6 +4,11 @@ import org.apache.jackrabbit.JcrConstants;
 import org.jahia.services.content.JCRNodeIteratorWrapper;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRPropertyWrapper;
+import org.jahia.services.content.JCRSessionWrapper;
+import org.jahia.services.content.JCRWorkspaceWrapper;
+import org.jahia.services.content.QueryManagerWrapper;
+import org.jahia.services.query.QueryResultWrapper;
+import org.jahia.services.query.QueryWrapper;
 import org.junit.Test;
 
 import javax.jcr.RepositoryException;
@@ -32,7 +37,8 @@ public class JcrStatsTraversalTest {
 
     @Test
     public void computeNode_nestedTree_aggregatesSizeCountAndVisitsEachNodeOnce() throws Exception {
-        // Arrange: /r -> {a(300) -> g(100), b(200)}
+        // Arrange a small tree rooted at r with two children a and b. Child a is sized three hundred
+        // and itself has one grandchild g sized one hundred; child b is sized two hundred.
         JCRNodeWrapper grand = mockNode("/r/a/g", 100L);
         JCRNodeWrapper childA = mockNode("/r/a", 300L, grand);
         JCRNodeWrapper childB = mockNode("/r/b", 200L);
@@ -116,9 +122,12 @@ public class JcrStatsTraversalTest {
     public void computeNode_whenCancelled_abortsImmediately() throws Exception {
         JCRNodeWrapper root = mockNode("/r", NO_DATA, mockNode("/r/a", 100L));
 
-        // A cancellation flag that is already set must stop the traversal at the first node.
+        // A cancellation flag that is already set must stop the traversal at the first node, and it must
+        // do so via the dedicated cancellation exception (not just any RepositoryException) so the
+        // service can distinguish a clean cancel from a genuine failure.
         assertThatThrownBy(() -> computer.computeNode(null, root, new AtomicLong(), () -> true, path -> false))
-                .isInstanceOf(RepositoryException.class);
+                .isInstanceOf(RepositoryException.class)
+                .hasMessageContaining("cancelled");
     }
 
     @Test
@@ -133,6 +142,39 @@ public class JcrStatsTraversalTest {
 
         assertThat(stats.getNodeCount()).isEqualTo(2L);
         assertThat(stats.getSize()).isEqualTo(100L);
+    }
+
+    @Test
+    public void computeNode_directListingFails_recoversValidChildrenViaEscapedQuery() throws Exception {
+        // The motivating crash's SUCCESS path: getNodes() throws (a child name is not a valid JCR path),
+        // but the escaped ISCHILDNODE query returns the valid children, so the branch is recovered.
+        JCRNodeWrapper good1 = mockNode("/mount/a", 100L);
+        JCRNodeWrapper good2 = mockNode("/mount/b", 200L);
+
+        JCRNodeWrapper parent = mock(JCRNodeWrapper.class);
+        when(parent.getPath()).thenReturn("/mount");
+        when(parent.hasProperty(JcrConstants.JCR_DATA)).thenReturn(false);
+        when(parent.getNodes()).thenThrow(new RepositoryException("Invalid path: ':' not valid name character"));
+
+        // Wire session → workspace → queryManager → query → result → iterator(good1, good2).
+        JCRNodeIteratorWrapper queriedChildren = mockIterator(good1, good2);
+        QueryResultWrapper result = mock(QueryResultWrapper.class);
+        when(result.getNodes()).thenReturn(queriedChildren);
+        QueryWrapper query = mock(QueryWrapper.class);
+        when(query.execute()).thenReturn(result);
+        QueryManagerWrapper queryManager = mock(QueryManagerWrapper.class);
+        when(queryManager.createQuery(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(query);
+        JCRWorkspaceWrapper workspace = mock(JCRWorkspaceWrapper.class);
+        when(workspace.getQueryManager()).thenReturn(queryManager);
+        JCRSessionWrapper session = mock(JCRSessionWrapper.class);
+        when(session.getWorkspace()).thenReturn(workspace);
+
+        NodeStats stats = computer.computeNode(session, parent, new AtomicLong(), () -> false, path -> false);
+
+        // Both queried children are counted and their sizes summed, despite the direct listing failure.
+        assertThat(stats.getNodeCount()).isEqualTo(3L);
+        assertThat(stats.getSize()).isEqualTo(300L);
     }
 
     // --- helpers ---

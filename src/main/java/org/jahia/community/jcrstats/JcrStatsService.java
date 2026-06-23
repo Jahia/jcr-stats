@@ -84,15 +84,15 @@ public class JcrStatsService {
                 computedAt = System.currentTimeMillis();
                 // Auto-save the finished tree as a JSON snapshot so it can be reloaded later (history).
                 computer.writeJsonSnapshot(tree, effectivePath);
+            } catch (JcrStatsComputer.CancelledException e) {
+                // Expected stop, not a failure: the traversal threw precisely because cancellation was
+                // requested. Classifying by exception type (not by re-reading the flag) means a genuine
+                // RepositoryException thrown after cancel is still reported as an error, not a clean stop.
+                lastRunCancelled = true;
+                LOGGER.info("JCR stats computation cancelled for path {} after {} nodes", effectivePath, visited.get());
             } catch (RepositoryException | RuntimeException e) {
-                if (cancelRequested.get()) {
-                    // Expected stop, not a failure: the traversal threw because cancellation was requested.
-                    lastRunCancelled = true;
-                    LOGGER.info("JCR stats computation cancelled for path {} after {} nodes", effectivePath, visited.get());
-                } else {
-                    lastError = GENERIC_ERROR;
-                    LOGGER.error("Asynchronous JCR stats computation failed for path {}", effectivePath, e);
-                }
+                lastError = GENERIC_ERROR;
+                LOGGER.error("Asynchronous JCR stats computation failed for path {}", effectivePath, e);
             } finally {
                 finishedAt = System.currentTimeMillis();
                 running.set(false);

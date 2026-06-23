@@ -115,12 +115,23 @@ public class JcrStatsConfig implements ManagedService {
         return persist(next);
     }
 
+    /** Upper bound on an excluded path length; defends against pathological values in the .cfg we write. */
+    static final int MAX_PATH_LENGTH = 4096;
+
     /**
-     * Validates an excluded path: absolute, no comma (the storage separator), no whitespace/control
-     * characters, and free of {@code ..} segments. Intentionally strict — this guards the file we write.
+     * Validates an excluded path: a genuine absolute JCR path — one or more {@code /segment} parts
+     * where a segment is non-empty and contains neither {@code /} nor a comma (the storage separator).
+     * Also bounded length, no whitespace/control characters, and free of {@code ..} segments.
+     *
+     * <p>Implemented with linear string checks instead of a regex: the equivalent pattern
+     * {@code (/[^/,]+)+} has a nested quantifier that risks catastrophic backtracking (Sonar S5998).
+     * Requiring a leading {@code /}, no empty segment ({@code //}) and no trailing {@code /} is the
+     * same grammar, validated in O(n).</p>
      */
     static boolean isValidPath(String path) {
-        if (path == null || !path.startsWith("/") || path.contains(",") || path.contains("..")) {
+        if (path == null || path.length() < 2 || path.length() > MAX_PATH_LENGTH
+                || !path.startsWith("/") || path.endsWith("/")
+                || path.contains("//") || path.contains(",") || path.contains("..")) {
             return false;
         }
         for (int i = 0; i < path.length(); i++) {

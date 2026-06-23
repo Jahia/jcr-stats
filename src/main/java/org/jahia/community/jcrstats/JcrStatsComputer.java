@@ -7,16 +7,18 @@ import org.jahia.api.Constants;
 import org.jahia.services.content.JCRContentUtils;
 import org.jahia.services.content.JCRNodeIteratorWrapper;
 import org.jahia.services.content.JCRNodeWrapper;
-import org.jahia.services.content.JCRSessionFactory;
 import org.jahia.services.content.JCRSessionWrapper;
 import org.jahia.services.content.JCRTemplate;
 import org.jahia.services.content.QueryManagerWrapper;
 import org.jahia.services.query.QueryWrapper;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 
 import javax.jcr.RepositoryException;
+import javax.jcr.ValueFormatException;
 import javax.jcr.query.Query;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -33,8 +35,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
@@ -81,8 +87,13 @@ public class JcrStatsComputer {
     private static final boolean USE_QUERY_TRAVERSAL =
             "query".equalsIgnoreCase(System.getProperty("jcrStats.traversal", "direct"));
 
+    // A fixed JCR content path (a repository node path, not a configurable filesystem/server URI), so
+    // S1075 ("get this URI from a customizable parameter") does not apply. Single source of truth for
+    // the base location; the snapshots/reports folders derive from it.
+    @SuppressWarnings("java:S1075")
+    private static final String JCR_STATS_BASE_PATH = "/sites/systemsite/files/jcr-stats";
     /** JCR folder holding the auto-saved JSON execution snapshots (one timestamped file per run). */
-    public static final String SNAPSHOTS_PATH = "/sites/systemsite/files/jcr-stats/snapshots";
+    public static final String SNAPSHOTS_PATH = JCR_STATS_BASE_PATH + "/snapshots";
     // The export envelope's format tag — MUST match the SAVE_FORMAT the UI's importer accepts.
     private static final String SNAPSHOT_FORMAT = "jcr-stats-flamegraph";
     // Snapshot tree depth — keep in sync with the MAX_DEPTH coupling documented in CHANGELOG Notes.
@@ -92,6 +103,8 @@ public class JcrStatsComputer {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss-SSS");
     /** Max accepted size for an externally-supplied snapshot (defends the saveSnapshot path). */
     private static final int MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024;
+    /** Retention cap: at most this many snapshot files are kept; older ones are pruned on write. */
+    private static final int MAX_SNAPSHOTS = 50;
 
     /**
      * Computes the size statistics of the subtree rooted at {@code path} without writing anything.
@@ -188,9 +201,11 @@ public class JcrStatsComputer {
         final String storageFolder = STORAGE_FOLDER_FORMATTER.format(LocalDateTime.now());
 
         final File graphFile = graphPath.toFile();
-        writeGraphHeader(graphFile);
+        // Fix 8: header/footer now signal failure; a half-written file must never be uploaded.
+        if (!writeGraphHeader(graphFile)) {
+            return null;
+        }
 
-        // Fix 4: track whether the data-writing step succeeded; abort upload on failure
         boolean dataWritten = false;
         try (final FileOutputStream fileOutputStream = new FileOutputStream(graphFile, true);
              final OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
@@ -201,41 +216,52 @@ public class JcrStatsComputer {
             LOGGER.error("Impossible to write graph", ex);
         }
 
-        // Fix 4: do not upload a partial/corrupt file
-        if (!dataWritten) {
+        // Fix 4/8: do not upload a partial/corrupt file
+        if (!dataWritten || !writeGraphFooter(graphFile)) {
             return null;
         }
 
-        writeGraphFooter(graphFile);
-        try (final InputStream graphStream = new FileInputStream(graphFile)) {
-            final JCRNodeWrapper jcrStatsNode = mkdirs("/sites/systemsite/files/jcr-stats/" + storageFolder);
-            jcrStatsNode.uploadFile(FILE_NAME, graphStream, MediaType.TEXT_HTML_VALUE);
-            jcrStatsNode.saveSession();
-            return jcrStatsNode.getPath() + FileSystem.SEPARATOR + FILE_NAME;
-        } catch (IOException | RepositoryException ex) {
+        // Fix 4: upload inside a dedicated, properly-closed system session (JCRTemplate) instead of the
+        // thread-unbound getCurrentSystemSession(), which is unsafe from the background thread.
+        try {
+            return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> {
+                try (final InputStream graphStream = new FileInputStream(graphFile)) {
+                    final JCRNodeWrapper jcrStatsNode = mkdirs(session, JCR_STATS_BASE_PATH + "/" + storageFolder);
+                    jcrStatsNode.uploadFile(FILE_NAME, graphStream, MediaType.TEXT_HTML_VALUE);
+                    session.save();
+                    return jcrStatsNode.getPath() + FileSystem.SEPARATOR + FILE_NAME;
+                } catch (IOException ex) {
+                    throw new RepositoryException("Impossible to read graph file for upload", ex);
+                }
+            });
+        } catch (RepositoryException ex) {
             LOGGER.error("Impossible to write graph", ex);
             return null;
         }
     }
 
-    private void writeGraphHeader(File graphFile) {
-        // Fix 4: null-check the resource — throws clearly instead of NPE when bundle is mis-packaged
+    /** Writes the flamegraph HTML header into {@code graphFile}; returns {@code false} on any failure. */
+    private boolean writeGraphHeader(File graphFile) {
         final URL inputUrl = this.getClass().getClassLoader().getResource("META-INF/templates/flamegraph.header.vm");
         if (inputUrl == null) {
-            throw new IllegalStateException("Missing flamegraph template: META-INF/templates/flamegraph.header.vm");
+            LOGGER.error("Missing flamegraph template: META-INF/templates/flamegraph.header.vm");
+            return false;
         }
         try {
             FileUtils.copyURLToFile(inputUrl, graphFile);
+            return true;
         } catch (IOException ex) {
             LOGGER.error("Impossible to copy header", ex);
+            return false;
         }
     }
 
-    private void writeGraphFooter(File graphFile) {
-        // Fix 4: null-check the resource — throws clearly instead of NPE when bundle is mis-packaged
+    /** Appends the flamegraph HTML footer to {@code graphFile}; returns {@code false} on any failure. */
+    private boolean writeGraphFooter(File graphFile) {
         final InputStream rawStream = this.getClass().getClassLoader().getResourceAsStream("META-INF/templates/flamegraph.footer.vm");
         if (rawStream == null) {
-            throw new IllegalStateException("Missing flamegraph template: META-INF/templates/flamegraph.footer.vm");
+            LOGGER.error("Missing flamegraph template: META-INF/templates/flamegraph.footer.vm");
+            return false;
         }
         try (final InputStream inputStream = rawStream;
              final InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
@@ -249,8 +275,10 @@ public class JcrStatsComputer {
                 bufferedWriter.write(line);
                 bufferedWriter.newLine();
             }
+            return true;
         } catch (IOException ex) {
             LOGGER.error("Impossible to copy footer", ex);
+            return false;
         }
     }
 
@@ -341,27 +369,119 @@ public class JcrStatsComputer {
             LOGGER.warn("Rejected snapshot save: empty or larger than {} bytes", MAX_SNAPSHOT_BYTES);
             return null;
         }
-        if (!json.contains("\"format\":\"" + SNAPSHOT_FORMAT + "\"")) {
+        if (!isValidSnapshotEnvelope(json)) {
             LOGGER.warn("Rejected snapshot save: not a recognized jcr-stats snapshot envelope");
             return null;
         }
         return storeSnapshot(json);
     }
 
+    /**
+     * Structural validation of an externally-supplied snapshot: it must parse as a JSON object whose
+     * top-level {@code format} equals {@value #SNAPSHOT_FORMAT} and that carries a {@code tree} object.
+     * A real parse (rather than a substring match) rejects malformed or disguised payloads.
+     */
+    private static boolean isValidSnapshotEnvelope(String json) {
+        try {
+            final JSONObject root = new JSONObject(json);
+            return SNAPSHOT_FORMAT.equals(root.optString("format", null))
+                    && root.optJSONObject("tree") != null;
+        } catch (JSONException e) {
+            return false;
+        }
+    }
+
     /** Uploads the given snapshot JSON as a new timestamped {@code jnt:file} under {@link #SNAPSHOTS_PATH}. */
     private String storeSnapshot(String json) {
         final String fileName = "jcr-stats-" + SNAPSHOT_NAME_FORMATTER.format(LocalDateTime.now()) + ".json";
-        try (InputStream in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))) {
-            final JCRNodeWrapper folder = mkdirs(SNAPSHOTS_PATH);
-            folder.uploadFile(fileName, in, MediaType.APPLICATION_JSON_VALUE);
-            folder.saveSession();
-            final String storedPath = folder.getPath() + FileSystem.SEPARATOR + fileName;
-            LOGGER.info("Saved JSON snapshot to {}", storedPath);
-            return storedPath;
-        } catch (IOException | RepositoryException e) {
+        try {
+            // Fix 4: dedicated, properly-closed system session via JCRTemplate (not getCurrentSystemSession).
+            return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> {
+                try (InputStream in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))) {
+                    final JCRNodeWrapper folder = mkdirs(session, SNAPSHOTS_PATH);
+                    folder.uploadFile(fileName, in, MediaType.APPLICATION_JSON_VALUE);
+                    session.save();
+                    final String storedPath = folder.getPath() + FileSystem.SEPARATOR + fileName;
+                    LOGGER.info("Saved JSON snapshot to {}", storedPath);
+                    // Best-effort retention: prune the oldest snapshots beyond the cap.
+                    pruneOldSnapshots(session, folder);
+                    return storedPath;
+                } catch (IOException e) {
+                    throw new RepositoryException("Failed to serialize JSON snapshot", e);
+                }
+            });
+        } catch (RepositoryException e) {
             LOGGER.error("Failed to write JSON snapshot", e);
             return null;
         }
+    }
+
+    /**
+     * Best-effort retention: keeps at most {@link #MAX_SNAPSHOTS} most recent snapshot files in
+     * {@code folder}, removing the oldest beyond that cap. Failures are logged, never thrown — pruning
+     * must not fail a successful save.
+     */
+    private void pruneOldSnapshots(JCRSessionWrapper session, JCRNodeWrapper folder) {
+        try {
+            final List<JCRNodeWrapper> files = new ArrayList<>();
+            final JCRNodeIteratorWrapper it = folder.getNodes();
+            while (it.hasNext()) {
+                files.add((JCRNodeWrapper) it.next());
+            }
+            if (files.size() <= MAX_SNAPSHOTS) {
+                return;
+            }
+            // Oldest first (name encodes an ISO-like timestamp, so lexical order == chronological order).
+            files.sort(Comparator.comparing(JCRNodeWrapper::getName));
+            for (int i = 0; i < files.size() - MAX_SNAPSHOTS; i++) {
+                final JCRNodeWrapper old = files.get(i);
+                LOGGER.info("Pruning old JCR stats snapshot {}", old.getPath());
+                old.remove();
+            }
+            session.save();
+        } catch (RepositoryException | RuntimeException e) {
+            LOGGER.warn("Failed to prune old JCR stats snapshots: {}", e.toString());
+        }
+    }
+
+    /**
+     * Deletes a snapshot file at {@code path}. The path MUST be a file directly under
+     * {@link #SNAPSHOTS_PATH} — any other path is rejected, so this can never delete arbitrary content.
+     * Returns {@code true} if a node was found and removed.
+     */
+    public boolean deleteSnapshot(String path) {
+        if (!isSnapshotPath(path)) {
+            LOGGER.warn("Rejected snapshot deletion: {} is not under {}", path, SNAPSHOTS_PATH);
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> {
+                if (!session.nodeExists(path)) {
+                    return Boolean.FALSE;
+                }
+                session.getNode(path).remove();
+                session.save();
+                LOGGER.info("Deleted JCR stats snapshot {}", path);
+                return Boolean.TRUE;
+            }));
+        } catch (RepositoryException e) {
+            LOGGER.error("Failed to delete JCR stats snapshot {}", path, e);
+            return false;
+        }
+    }
+
+    /** Whether {@code path} is a direct child file of {@link #SNAPSHOTS_PATH} (no nesting, no traversal). */
+    static boolean isSnapshotPath(String path) {
+        if (path == null) {
+            return false;
+        }
+        final String prefix = SNAPSHOTS_PATH + "/";
+        if (!path.startsWith(prefix) || path.contains("..")) {
+            return false;
+        }
+        // A single remaining segment after the prefix — reject any further nesting.
+        final String remainder = path.substring(prefix.length());
+        return !remainder.isEmpty() && remainder.indexOf('/') < 0;
     }
 
     /** Builds the export-envelope JSON ({@code {format,version,path,maxDepth,exportedAt,tree}}). */
@@ -370,7 +490,9 @@ public class JcrStatsComputer {
         sb.append("{\"format\":\"").append(SNAPSHOT_FORMAT)
                 .append("\",\"version\":1,\"path\":\"").append(jsonEscape(computedPath))
                 .append("\",\"maxDepth\":").append(SNAPSHOT_MAX_DEPTH)
-                .append(",\"exportedAt\":\"").append(LocalDateTime.now()).append("\",\"tree\":");
+                // Instant.now() yields an unambiguous UTC instant with a trailing Z, unlike the
+                // zone-less LocalDateTime.now() which could be read as any timezone.
+                .append(",\"exportedAt\":\"").append(Instant.now()).append("\",\"tree\":");
         appendNodeJson(tree, sb, SNAPSHOT_MAX_DEPTH);
         sb.append('}');
         return sb.toString();
@@ -412,7 +534,9 @@ public class JcrStatsComputer {
                 case '\b': sb.append("\\b"); break;
                 case '\f': sb.append("\\f"); break;
                 default:
-                    if (c < 0x20) {
+                    // Escape C0 controls and lone UTF-16 surrogates (U+D800..U+DFFF). A surrogate that
+                    // is not part of a valid pair would otherwise produce invalid UTF-8/JSON on write.
+                    if (c < 0x20 || (c >= Character.MIN_SURROGATE && c <= Character.MAX_SURROGATE)) {
                         sb.append(String.format("\\u%04x", (int) c));
                     } else {
                         sb.append(c);
@@ -457,42 +581,64 @@ public class JcrStatsComputer {
         }
         final NodeStats currentNodeStats = new NodeStats(node.getPath());
         if (node.hasProperty(JcrConstants.JCR_DATA)) {
-            currentNodeStats.setSize(node.getProperty(JcrConstants.JCR_DATA).getLength());
+            try {
+                // getLength() throws ValueFormatException on a multi-valued jcr:data property; such a
+                // node is not a binary we can size, so skip its size contribution rather than abort.
+                currentNodeStats.setSize(node.getProperty(JcrConstants.JCR_DATA).getLength());
+            } catch (ValueFormatException e) {
+                LOGGER.warn("Skipping size of {} — jcr:data is multi-valued: {}", currentNodeStats.getPath(), e.toString());
+            }
         }
 
         final JCRNodeIteratorWrapper children = listChildren(session, node, currentNodeStats.getPath());
         if (children == null) {
             return currentNodeStats; // children could not be enumerated; already logged
         }
-        while (true) {
-            final JCRNodeWrapper child;
-            try {
-                if (!children.hasNext()) {
-                    break;
-                }
-                child = (JCRNodeWrapper) children.next();
-            } catch (RuntimeException e) {
-                // hasNext()/next() come from java.util.Iterator and throw only unchecked exceptions
-                // (Jahia wraps repository errors as runtime). Stop listing this node's children.
-                LOGGER.warn("Stopped listing children of {} after an iteration error: {}",
-                        currentNodeStats.getPath(), e.toString());
-                break;
-            }
-            try {
-                // Configured exclusions remove the node and its whole subtree from the totals.
-                if (excludedPath.test(child.getPath())) {
-                    continue;
-                }
-                currentNodeStats.addSubNodeStats(computeNode(session, child, visited, cancelled, excludedPath));
-            } catch (TraversalAbortException e) {
-                throw e; // cancellation or the hard MAX_VISITED_NODES limit — abort the whole traversal
-            } catch (RepositoryException | RuntimeException e) {
-                LOGGER.warn("Skipping a child of {} — could not compute its size: {}",
-                        currentNodeStats.getPath(), e.toString());
-            }
+        // S135: at most one branch-altering statement in this loop. nextChild() absorbs the
+        // hasNext()/next() iteration (returning null to end the loop, on exhaustion or iteration
+        // error); the per-child error handling is delegated to accumulateChild().
+        for (JCRNodeWrapper child = nextChild(children, currentNodeStats.getPath());
+             child != null;
+             child = nextChild(children, currentNodeStats.getPath())) {
+            accumulateChild(session, child, currentNodeStats, visited, cancelled, excludedPath);
         }
 
         return currentNodeStats;
+    }
+
+    /**
+     * Returns the next child from {@code children}, or {@code null} when iteration is finished — either
+     * because the iterator is exhausted or because {@code hasNext()}/{@code next()} threw (Jahia wraps
+     * repository errors as unchecked). A {@code null} return ends the children loop in {@link #computeNode}.
+     */
+    private JCRNodeWrapper nextChild(JCRNodeIteratorWrapper children, String parentPath) {
+        try {
+            return children.hasNext() ? (JCRNodeWrapper) children.next() : null;
+        } catch (RuntimeException e) {
+            LOGGER.warn("Stopped listing children of {} after an iteration error: {}", parentPath, e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * Recurses into one child and adds its stats to {@code parentStats}, unless the child is excluded.
+     * A {@link TraversalAbortException} (cancellation or the hard node limit) propagates to abort the
+     * whole traversal; any other per-child error is logged and skipped so a single bad branch does not
+     * fail the computation.
+     */
+    private void accumulateChild(JCRSessionWrapper session, JCRNodeWrapper child, NodeStats parentStats,
+            AtomicLong visited, BooleanSupplier cancelled, Predicate<String> excludedPath) throws RepositoryException {
+        try {
+            // Configured exclusions remove the node and its whole subtree from the totals.
+            if (!excludedPath.test(child.getPath())) {
+                parentStats.addSubNodeStats(computeNode(session, child, visited, cancelled, excludedPath));
+            }
+        } catch (TraversalAbortException e) {
+            throw e; // cancellation or the hard MAX_VISITED_NODES limit — abort the whole traversal
+        } catch (RepositoryException | RuntimeException e) {
+            LOGGER.warn("Skipping a child of {} — could not compute its size: {}",
+                    parentStats.getPath(), e.toString());
+        }
     }
 
     /**
@@ -547,8 +693,12 @@ public class JcrStatsComputer {
         }
     }
 
-    /** Signals that the caller requested cancellation (via the {@code cancelled} supplier). */
-    private static final class CancelledException extends TraversalAbortException {
+    /**
+     * Signals that the caller requested cancellation (via the {@code cancelled} supplier).
+     * Package-private (not nested-private) so {@link JcrStatsService} can distinguish a clean
+     * cancellation from a genuine post-cancel {@link RepositoryException} by exception type.
+     */
+    static final class CancelledException extends TraversalAbortException {
         private static final long serialVersionUID = 1L;
 
         CancelledException() {
@@ -565,8 +715,7 @@ public class JcrStatsComputer {
         return query.execute().getNodes();
     }
 
-    private static JCRNodeWrapper mkdirs(String path) throws RepositoryException {
-        final JCRSessionWrapper session = JCRSessionFactory.getInstance().getCurrentSystemSession(Constants.EDIT_WORKSPACE, null, null);
+    private static JCRNodeWrapper mkdirs(JCRSessionWrapper session, String path) throws RepositoryException {
         JCRNodeWrapper folderNode = session.getRootNode();
         for (String folder : path.split(FileSystem.SEPARATOR)) {
             if (!folder.isEmpty()) {

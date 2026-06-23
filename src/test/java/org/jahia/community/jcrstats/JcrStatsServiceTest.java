@@ -56,6 +56,35 @@ public class JcrStatsServiceTest {
                 .isEqualTo("previous error");
     }
 
+    // --- cancel ---
+
+    @Test
+    public void cancel_whenIdle_returnsFalse() {
+        // Nothing running → nothing to cancel.
+        assertThat(service.cancel()).isFalse();
+    }
+
+    @Test
+    public void cancel_whenRunning_returnsTrueAndSetsFlag() throws Exception {
+        AtomicBoolean running = getField("running");
+        running.set(true);
+
+        assertThat(service.cancel()).isTrue();
+
+        AtomicBoolean cancelRequested = getField("cancelRequested");
+        assertThat(cancelRequested.get())
+                .as("cancel() must raise the cooperative cancellation flag")
+                .isTrue();
+    }
+
+    @Test
+    public void isLastRunCancelled_reflectsField() throws Exception {
+        assertThat(service.isLastRunCancelled()).isFalse();
+
+        setField("lastRunCancelled", true);
+        assertThat(service.isLastRunCancelled()).isTrue();
+    }
+
     // --- getElapsedMs branches ---
 
     @Test
