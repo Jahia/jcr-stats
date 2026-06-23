@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] — Unreleased
+## [2.1.1] — Unreleased
+
+### Changed
+
+- **Tree Traversal Strategy** — The size computation now walks the JCR hierarchy directly via `JCRNodeWrapper.getNodes()` instead of firing one `ISCHILDNODE` JCR-SQL2 query per node. This removes a per-node query parse/plan/index lookup plus a redundant path resolution, making large-subtree computations substantially faster, and reads committed hierarchy state instead of possibly-lagging Lucene index state. The legacy query-based strategy remains available for A/B benchmarking via the `-DjcrStats.traversal=query` system property (default: `direct`).
+- **Session Refresh** — `session.refresh(false)` now runs once at the start of a traversal instead of once per node (the per-node refresh was needless overhead on a read-only walk).
+
+### Tests
+
+- Added `JcrStatsTraversalTest` covering the direct-traversal aggregation logic (size roll-up, node count, single-visit guarantee, size-descending child ordering) with mocked `JCRNodeWrapper`s; introduced a `test`-scoped Mockito dependency.
+
+---
+
+## [2.1.0] — 2026-06-23
 
 ### Added
 

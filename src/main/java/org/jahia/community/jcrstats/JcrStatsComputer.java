@@ -67,6 +67,18 @@ public class JcrStatsComputer {
     private static final long MAX_VISITED_NODES = 5_000_000L;
 
     /**
+     * Traversal strategy selector. The default ({@code "direct"}) walks the hierarchy with
+     * {@link JCRNodeWrapper#getNodes()}, reading each parent's child-node entries straight from the
+     * persisted bundle / item-state cache. Setting {@code -DjcrStats.traversal=query} restores the
+     * legacy strategy that fired one {@code ISCHILDNODE} JCR-SQL2 query per node (resolved against the
+     * Lucene index). The flag exists for A/B benchmarking; direct traversal is faster — it avoids a
+     * per-node query parse/plan/index lookup and an extra path resolution — and more accurate, since
+     * it reads committed hierarchy state rather than possibly-lagging index state.
+     */
+    private static final boolean USE_QUERY_TRAVERSAL =
+            "query".equalsIgnoreCase(System.getProperty("jcrStats.traversal", "direct"));
+
+    /**
      * Computes the size statistics of the subtree rooted at {@code path} without writing anything.
      * Read-only: safe to call from a GraphQL query.
      */
@@ -275,7 +287,25 @@ public class JcrStatsComputer {
     }
 
     private NodeStats computeSize(JCRSessionWrapper session, String currentPath, AtomicLong visited) throws RepositoryException {
+        // Refresh once at the entry rather than once per node: a read-only traversal does not need to
+        // re-sync the session view at every level, and per-node refresh was needless overhead.
         session.refresh(false);
+        final JCRNodeWrapper root = session.getNode(currentPath, false);
+        return computeNode(session, root, visited);
+    }
+
+    /**
+     * Recursively aggregates the size and node count of the subtree rooted at {@code node}.
+     *
+     * <p>Children are obtained either by direct {@link JCRNodeWrapper#getNodes()} hierarchy iteration
+     * (default) or, when {@link #USE_QUERY_TRAVERSAL} is set, by a per-node {@code ISCHILDNODE} query.
+     * Both branches recurse on the child {@link JCRNodeWrapper} directly, so no child is re-resolved
+     * by path.</p>
+     *
+     * <p>Package-private to allow unit-testing the traversal/aggregation logic with mocked nodes,
+     * without a live JCR session.</p>
+     */
+    NodeStats computeNode(JCRSessionWrapper session, JCRNodeWrapper node, AtomicLong visited) throws RepositoryException {
         // Defensive cap: abort cleanly before an over-broad path can exhaust the heap. The async
         // service records this as lastError; the synchronous GraphQL path catches it and returns a
         // sentinel (-1 / null). Generous ceiling, so legitimate traversals never hit it.
@@ -283,23 +313,29 @@ public class JcrStatsComputer {
             throw new RepositoryException("JCR stats traversal aborted: exceeded the maximum of "
                     + MAX_VISITED_NODES + " visited nodes (path too broad).");
         }
-        final NodeStats currentNodeStats = new NodeStats(currentPath);
-        final QueryManagerWrapper manager = session.getWorkspace().getQueryManager();
-        final String queryStmt = String.format("SELECT * FROM [%s] AS content WHERE ISCHILDNODE(content, '%s')", JcrConstants.NT_BASE, JCRContentUtils.sqlEncode(currentPath));
-        final QueryWrapper query = manager.createQuery(queryStmt, Query.JCR_SQL2);
-        final JCRNodeIteratorWrapper nodeIterator = query.execute().getNodes();
-        final JCRNodeWrapper nodeWrapper = session.getNode(currentPath, false);
-        if (nodeWrapper.hasProperty(JcrConstants.JCR_DATA)) {
-            currentNodeStats.setSize(nodeWrapper.getProperty(JcrConstants.JCR_DATA).getLength());
+        final NodeStats currentNodeStats = new NodeStats(node.getPath());
+        if (node.hasProperty(JcrConstants.JCR_DATA)) {
+            currentNodeStats.setSize(node.getProperty(JcrConstants.JCR_DATA).getLength());
         }
 
-        while (nodeIterator.hasNext()) {
-            final JCRNodeWrapper subNodeWrapper = (JCRNodeWrapper) nodeIterator.next();
-            final NodeStats nodeStats = computeSize(session, subNodeWrapper.getPath(), visited);
-            currentNodeStats.addSubNodeStats(nodeStats);
+        final JCRNodeIteratorWrapper children = USE_QUERY_TRAVERSAL
+                ? queryChildren(session, node.getPath())
+                : node.getNodes();
+        while (children.hasNext()) {
+            final JCRNodeWrapper child = (JCRNodeWrapper) children.next();
+            currentNodeStats.addSubNodeStats(computeNode(session, child, visited));
         }
 
         return currentNodeStats;
+    }
+
+    /** Legacy strategy: returns the direct children of {@code path} via an {@code ISCHILDNODE} query. */
+    private JCRNodeIteratorWrapper queryChildren(JCRSessionWrapper session, String path) throws RepositoryException {
+        final QueryManagerWrapper manager = session.getWorkspace().getQueryManager();
+        final String queryStmt = String.format("SELECT * FROM [%s] AS content WHERE ISCHILDNODE(content, '%s')",
+                JcrConstants.NT_BASE, JCRContentUtils.sqlEncode(path));
+        final QueryWrapper query = manager.createQuery(queryStmt, Query.JCR_SQL2);
+        return query.execute().getNodes();
     }
 
     private static JCRNodeWrapper mkdirs(String path) throws RepositoryException {
