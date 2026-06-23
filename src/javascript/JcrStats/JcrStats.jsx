@@ -37,6 +37,7 @@ import {
     SUCCESS_DELETED,
     INFO_CANCELLED,
     INFO_CANCEL_MAYBE,
+    INFO_COMPARE_NEEDS_CURRENT,
     ERROR_STATUSES,
     SUCCESS_STATUSES,
     INFO_STATUSES,
@@ -108,19 +109,29 @@ const useSnapshotLoader = ({setFocused, setTree, setTreePath, setView, setStatus
     return {handleViewSnapshot, handleCompareSnapshot};
 };
 
-// E-2: deletes a stored execution snapshot (after an optional confirm) and refreshes the list.
-// Extracted into a hook so its try/catch + confirm branching does not inflate the main component's
-// cyclomatic complexity.
-const useSnapshotDeleter = ({t, deleteSnapshot, refetchSnapshots, setStatus}) => {
-    const handleDeleteSnapshot = useCallback(async (snapshotPath, snapshotName) => {
-        // Confirm-before-delete (E-2 nice-to-have): guarded so jsdom/test/headless paths without a
-        // window.confirm don't throw — only block when confirm exists and the user declines.
-        const hasConfirm = typeof window !== 'undefined' && typeof window.confirm === 'function';
-        // eslint-disable-next-line no-alert
-        if (hasConfirm && !window.confirm(t('label.deleteSnapshotConfirm', {name: snapshotName}))) {
-            return;
-        }
+// FIX 2 (a11y): deletes a stored execution snapshot via an accessible inline two-step confirmation
+// instead of the inaccessible native window.confirm (which has language/focus issues and is silently
+// skipped where it is unavailable). The first Delete click records the pending row in
+// `confirmingDeletePath`; the row then renders Confirm/Cancel controls and the actual delete runs only
+// when Confirm is activated. Extracted into a hook so its try/catch branching does not inflate the
+// main component's cyclomatic complexity.
+const useSnapshotDeleter = ({deleteSnapshot, refetchSnapshots, setStatus}) => {
+    // Path of the snapshot whose row is awaiting delete confirmation (null when none).
+    const [confirmingDeletePath, setConfirmingDeletePath] = useState(null);
 
+    // First Delete click: arm the inline confirmation for this row (no destructive action yet).
+    const requestDeleteSnapshot = useCallback(snapshotPath => {
+        setConfirmingDeletePath(snapshotPath);
+    }, []);
+
+    // Cancel: return the row to its normal (un-armed) state.
+    const cancelDeleteSnapshot = useCallback(() => {
+        setConfirmingDeletePath(null);
+    }, []);
+
+    // Confirm: perform the delete, refresh the list and announce success (or surface the error).
+    const confirmDeleteSnapshot = useCallback(async snapshotPath => {
+        setConfirmingDeletePath(null);
         try {
             const {data} = await deleteSnapshot({variables: {path: snapshotPath}});
             if (data && data.jcrStats && data.jcrStats.deleteSnapshot) {
@@ -133,9 +144,9 @@ const useSnapshotDeleter = ({t, deleteSnapshot, refetchSnapshots, setStatus}) =>
             console.error('[jcr-stats] failed to delete snapshot', err);
             setStatus(ERROR_DELETE);
         }
-    }, [t, deleteSnapshot, refetchSnapshots, setStatus]);
+    }, [deleteSnapshot, refetchSnapshots, setStatus]);
 
-    return {handleDeleteSnapshot};
+    return {confirmingDeletePath, requestDeleteSnapshot, cancelDeleteSnapshot, confirmDeleteSnapshot};
 };
 
 // Exclusion add/remove actions, extracted into a hook so their try/catch branching does not inflate
@@ -348,9 +359,84 @@ const SnapshotMeta = ({t, snapshot}) => {
     return <span className={styles.js_snapshot_meta}>{t('label.snapshotMeta', {date, size})}</span>;
 };
 
+// The per-row action cluster for a saved execution: View, Compare and the Delete control, which
+// toggles into an inline two-step confirmation (Confirm/Cancel) instead of a native dialog (FIX 2).
+// Extracted so SnapshotsPanel's complexity stays bounded and the focus-management effect is per-row.
+const SnapshotActions = ({t, snapshot, isConfirmingDelete, onView, onCompare, onRequestDelete, onConfirmDelete, onCancelDelete}) => {
+    // FIX 2: move focus to the Confirm button when the row enters the confirm state, so keyboard/AT
+    // users land on the now-primary destructive action rather than being left where the row repainted.
+    // Moonstone's Button is a plain function component (no forwardRef), so we focus it by querying the
+    // rendered DOM button via a stable data-testid within this row's action container.
+    const actionsRef = useRef(null);
+    useEffect(() => {
+        if (isConfirmingDelete && actionsRef.current) {
+            const confirmButton = actionsRef.current.querySelector('[data-testid="jcrstats-snapshot-confirm-delete"]');
+            if (confirmButton) {
+                confirmButton.focus();
+            }
+        }
+    }, [isConfirmingDelete]);
+
+    if (isConfirmingDelete) {
+        return (
+            <span ref={actionsRef} className={styles.js_snapshot_actions}>
+                <Button
+                    data-testid="jcrstats-snapshot-confirm-delete"
+                    size="default"
+                    color="danger"
+                    label={t('label.confirmDeleteSnapshot')}
+                    aria-label={t('label.confirmDeleteSnapshotLabel', {name: snapshot.name})}
+                    onClick={() => onConfirmDelete(snapshot.path)}
+                />
+                <Button
+                    size="default"
+                    variant="ghost"
+                    label={t('label.cancelDeleteSnapshot')}
+                    aria-label={t('label.cancelDeleteSnapshotLabel', {name: snapshot.name})}
+                    onClick={onCancelDelete}
+                />
+            </span>
+        );
+    }
+
+    return (
+        <span className={styles.js_snapshot_actions}>
+            {/* A-4: visible labels stay short; aria-labels carry the unique snapshot name. */}
+            <Button
+                size="default"
+                label={t('label.viewSnapshot')}
+                aria-label={t('label.viewSnapshotLabel', {name: snapshot.name})}
+                onClick={() => onView(snapshot.url)}
+            />
+            {/*
+              FIX 1 (a11y): Compare is ALWAYS operable and focusable — never disabled — so AT/keyboard
+              users can reach it and learn the requirement. The action is gated in onCompare: with no
+              current tree it announces an INFO status; otherwise it loads the diff baseline. E-5: the
+              subtler "ghost" variant keeps View as the primary action and Compare subordinate.
+            */}
+            <Button
+                size="default"
+                variant="ghost"
+                label={t('label.compareSnapshot')}
+                aria-label={t('label.compareSnapshotLabel', {name: snapshot.name})}
+                onClick={() => onCompare(snapshot.url)}
+            />
+            {/* FIX 2: first click arms the inline confirmation (Confirm/Cancel) instead of deleting. */}
+            <Button
+                size="default"
+                variant="ghost"
+                color="danger"
+                label={t('label.deleteSnapshot')}
+                aria-label={t('label.deleteSnapshotLabel', {name: snapshot.name})}
+                onClick={() => onRequestDelete(snapshot.path)}
+            />
+        </span>
+    );
+};
+
 // Lists saved execution snapshots (most recent first). Each row has View (load as current tree),
 // Compare (load as diff baseline against the current tree) and Delete controls. Hidden when empty.
-const SnapshotsPanel = ({t, snapshots, hasCurrent, onView, onCompare, onDelete}) => {
+const SnapshotsPanel = ({t, snapshots, confirmingDeletePath, onView, onCompare, onRequestDelete, onConfirmDelete, onCancelDelete}) => {
     if (!snapshots.length) {
         return null;
     }
@@ -367,41 +453,16 @@ const SnapshotsPanel = ({t, snapshots, hasCurrent, onView, onCompare, onDelete})
                             {/* E-1: human-readable date + size beside the bare filename. */}
                             <SnapshotMeta t={t} snapshot={snapshot}/>
                         </span>
-                        <span className={styles.js_snapshot_actions}>
-                            {/* A-4: visible labels stay short; aria-labels carry the unique snapshot name. */}
-                            <Button
-                                size="default"
-                                label={t('label.viewSnapshot')}
-                                aria-label={t('label.viewSnapshotLabel', {name: snapshot.name})}
-                                onClick={() => onView(snapshot.url)}
-                            />
-                            {/*
-                              E-4: Compare diffs the snapshot against the CURRENT tree, so it is
-                              disabled (with an explanatory title/aria-label) until a current result
-                              exists. E-5: rendered with the subtler "default" variant so View reads
-                              as the primary action and Compare as secondary.
-                            */}
-                            <Button
-                                size="default"
-                                variant="ghost"
-                                label={t('label.compareSnapshot')}
-                                aria-label={hasCurrent ?
-                                    t('label.compareSnapshotLabel', {name: snapshot.name}) :
-                                    t('label.compareSnapshotDisabledLabel', {name: snapshot.name})}
-                                title={hasCurrent ? undefined : t('label.compareDisabledHint')}
-                                isDisabled={!hasCurrent}
-                                onClick={() => onCompare(snapshot.url)}
-                            />
-                            {/* E-2: delete the stored snapshot, then refetch the list. */}
-                            <Button
-                                size="default"
-                                variant="ghost"
-                                color="danger"
-                                label={t('label.deleteSnapshot')}
-                                aria-label={t('label.deleteSnapshotLabel', {name: snapshot.name})}
-                                onClick={() => onDelete(snapshot.path, snapshot.name)}
-                            />
-                        </span>
+                        <SnapshotActions
+                            t={t}
+                            snapshot={snapshot}
+                            isConfirmingDelete={confirmingDeletePath === snapshot.path}
+                            onView={onView}
+                            onCompare={onCompare}
+                            onRequestDelete={onRequestDelete}
+                            onConfirmDelete={onConfirmDelete}
+                            onCancelDelete={onCancelDelete}
+                        />
                     </li>
                 ))}
             </ul>
@@ -468,7 +529,19 @@ export const JcrStatsAdmin = () => {
     const {data: snapshotsData, refetch: refetchSnapshots} = useQuery(GET_SNAPSHOTS, {fetchPolicy: 'network-only'});
     const snapshots = readSnapshots(snapshotsData);
     const {handleViewSnapshot, handleCompareSnapshot} = useSnapshotLoader({setFocused, setTree, setTreePath, setView, setStatus, setBaseline});
-    const {handleDeleteSnapshot} = useSnapshotDeleter({t, deleteSnapshot, refetchSnapshots, setStatus});
+    const {confirmingDeletePath, requestDeleteSnapshot, cancelDeleteSnapshot, confirmDeleteSnapshot} =
+        useSnapshotDeleter({deleteSnapshot, refetchSnapshots, setStatus});
+    // FIX 1 (a11y): the Compare button is always operable; the requirement is gated on the ACTION,
+    // not by disabling the control. With no current tree loaded we announce an informational status
+    // explaining what to do; otherwise Compare loads the snapshot as the diff baseline (as before).
+    const compareSnapshot = useCallback(url => {
+        if (!tree) {
+            setStatus(INFO_COMPARE_NEEDS_CURRENT);
+            return;
+        }
+
+        handleCompareSnapshot(url);
+    }, [tree, handleCompareSnapshot]);
     // C-1: refresh the saved-execution list only after a SUCCESSFUL computation (a snapshot is
     // auto-saved on completion). Keying on `computing` flipping to false also fired on mount,
     // cancel, timeout and file-load — an over-broad refetch.
@@ -883,10 +956,12 @@ export const JcrStatsAdmin = () => {
             <SnapshotsPanel
                 t={t}
                 snapshots={snapshots}
-                hasCurrent={Boolean(tree)}
+                confirmingDeletePath={confirmingDeletePath}
                 onView={handleViewSnapshot}
-                onCompare={handleCompareSnapshot}
-                onDelete={handleDeleteSnapshot}
+                onCompare={compareSnapshot}
+                onRequestDelete={requestDeleteSnapshot}
+                onConfirmDelete={confirmDeleteSnapshot}
+                onCancelDelete={cancelDeleteSnapshot}
             />
 
             {computing && (

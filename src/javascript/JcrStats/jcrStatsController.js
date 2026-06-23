@@ -30,6 +30,9 @@ export const SUCCESS_DELETED = 'successDeleted';
 export const INFO_CANCELLED = 'infoCancelled';
 export const INFO_CANCEL_MAYBE = 'infoCancelMaybe';
 export const INFO_TIMEOUT = 'infoTimeout';
+// A11y (FIX 1): Compare is always operable (never disabled) so AT users can reach it; activating it
+// without a current result announces this informational requirement instead of doing nothing silently.
+export const INFO_COMPARE_NEEDS_CURRENT = 'infoCompareNeedsCurrent';
 
 export const ERROR_STATUSES = [
     ERROR_COMPUTE, ERROR_LOAD, ERROR_BASELINE, ERROR_SAVE, ERROR_DELETE, ERROR_EXCLUDE, ERROR_UNEXCLUDE
@@ -37,7 +40,7 @@ export const ERROR_STATUSES = [
 export const SUCCESS_STATUSES = [
     SUCCESS_COMPUTED, SUCCESS_LOADED, SUCCESS_BASELINE, SUCCESS_EXCLUDED, SUCCESS_UNEXCLUDED, SUCCESS_DELETED
 ];
-export const INFO_STATUSES = [INFO_CANCELLED, INFO_CANCEL_MAYBE, INFO_TIMEOUT];
+export const INFO_STATUSES = [INFO_CANCELLED, INFO_CANCEL_MAYBE, INFO_TIMEOUT, INFO_COMPARE_NEEDS_CURRENT];
 
 // Read the freshly-computed result and hand it to the supplied setters, guarded by isCancelled
 // (real unmount) and isStale (a newer compute generation started) so an overlapping poll + result

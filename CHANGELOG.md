@@ -158,7 +158,7 @@ Earlier releases provided only the Karaf `jcr-stats:compute-size` command. Detai
 
 ## Notes
 
-- **MAX_DEPTH Coupling** — The flame graph depth limit is set to 6 levels and is hardcoded in JcrStatsQuery.DEFAULT_MAX_DEPTH, JcrStats.jsx MAX_DEPTH constant, and the GraphQL query nesting structure. When changing this value, update all three locations.
+- **MAX_DEPTH Coupling** — The flame graph depth limit is set to 6 levels and is hardcoded in four places that must stay in sync: `JcrStatsQuery.DEFAULT_MAX_DEPTH`, `JcrStatsComputer.SNAPSHOT_MAX_DEPTH`, the `MAX_DEPTH` constant in `jcrStatsController.js`, and the GraphQL `getTree` query nesting structure (6 levels of `children { ... }`). When changing this value, update all four locations.
 
 - **Flamegraph Storage** — Generated HTML files are persisted at `/sites/systemsite/files/jcr-stats/` in the JCR for archival and later comparison.
 

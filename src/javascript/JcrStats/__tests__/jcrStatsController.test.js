@@ -10,13 +10,21 @@ import {
     ERROR_STATUSES,
     SUCCESS_COMPUTED,
     INFO_CANCELLED,
-    INFO_TIMEOUT
+    INFO_TIMEOUT,
+    INFO_STATUSES,
+    INFO_COMPARE_NEEDS_CURRENT
 } from '../jcrStatsController.js';
 
 describe('exclusion error statuses', () => {
     it('ERROR_STATUSES includes the dedicated exclude/unexclude statuses', () => {
         expect(ERROR_STATUSES).toContain(ERROR_EXCLUDE);
         expect(ERROR_STATUSES).toContain(ERROR_UNEXCLUDE);
+    });
+});
+
+describe('compare-needs-current info status (FIX 1)', () => {
+    it('INFO_STATUSES includes INFO_COMPARE_NEEDS_CURRENT so the banner renders it as a polite info message', () => {
+        expect(INFO_STATUSES).toContain(INFO_COMPARE_NEEDS_CURRENT);
     });
 });
 

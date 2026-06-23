@@ -122,7 +122,7 @@ The flame graph tree depth is hardcoded in four places and must stay in sync:
 
 1. **JcrStatsQuery.java**: `DEFAULT_MAX_DEPTH = 6`
 2. **JcrStatsComputer.java**: `SNAPSHOT_MAX_DEPTH = 6`
-3. **JcrStats.jsx**: `MAX_DEPTH = 6`
+3. **jcrStatsController.js**: `MAX_DEPTH = 6` (imported by JcrStats.jsx)
 4. **JcrStats.gql.js**: getTree query nesting (6 levels of `children { ... }`)
 
 If increasing max depth, update all four locations and test that response payloads and saved snapshots remain reasonable.
