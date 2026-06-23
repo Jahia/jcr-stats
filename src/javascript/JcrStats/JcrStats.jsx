@@ -132,10 +132,11 @@ const readExclusions = data => (data && data.jcrStats && data.jcrStats.exclusion
 const readSnapshots = data => (data && data.jcrStats && data.jcrStats.snapshots) || [];
 
 // Fetches a stored snapshot's JSON by URL and loads it into the viewer via the same validated
-// importer (extractTree) as the file-based Load. Extracted into a hook to keep the main component's
-// complexity bounded and its branches out of the render arrow.
-const useSnapshotLoader = ({setFocused, setTree, setTreePath, setView, setStatus}) => useCallback(async url => {
-    try {
+// importer (extractTree) as the file-based Load/Compare. Returns two handlers — load as the current
+// tree (View) or as the comparison baseline (Compare) — so two saved executions can be diffed.
+// Extracted into a hook to keep the main component's complexity bounded.
+const useSnapshotLoader = ({setFocused, setTree, setTreePath, setView, setStatus, setBaseline}) => {
+    const fetchSnapshot = useCallback(async url => {
         const response = await fetch(url, {credentials: 'same-origin'});
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -146,17 +147,37 @@ const useSnapshotLoader = ({setFocused, setTree, setTreePath, setView, setStatus
             throw new Error('snapshot too large');
         }
 
-        const {tree: loaded, path: loadedPath} = extractTree(JSON.parse(text));
-        setFocused(null);
-        setTreePath(loadedPath);
-        setTree(loaded);
-        setView(VIEW_FLAMEGRAPH);
-        setStatus(SUCCESS_LOADED);
-    } catch (err) {
-        console.error('[jcr-stats] failed to load snapshot', err);
-        setStatus(ERROR_LOAD);
-    }
-}, [setFocused, setTree, setTreePath, setView, setStatus]);
+        return extractTree(JSON.parse(text));
+    }, []);
+
+    const handleViewSnapshot = useCallback(async url => {
+        try {
+            const {tree: loaded, path: loadedPath} = await fetchSnapshot(url);
+            setFocused(null);
+            setTreePath(loadedPath);
+            setTree(loaded);
+            setView(VIEW_FLAMEGRAPH);
+            setStatus(SUCCESS_LOADED);
+        } catch (err) {
+            console.error('[jcr-stats] failed to load snapshot', err);
+            setStatus(ERROR_LOAD);
+        }
+    }, [fetchSnapshot, setFocused, setTree, setTreePath, setView, setStatus]);
+
+    const handleCompareSnapshot = useCallback(async url => {
+        try {
+            const {tree: loaded} = await fetchSnapshot(url);
+            setBaseline(loaded);
+            setView(VIEW_DIFF);
+            setStatus(SUCCESS_BASELINE);
+        } catch (err) {
+            console.error('[jcr-stats] failed to load snapshot for comparison', err);
+            setStatus(ERROR_BASELINE);
+        }
+    }, [fetchSnapshot, setBaseline, setView, setStatus]);
+
+    return {handleViewSnapshot, handleCompareSnapshot};
+};
 
 // Exclusion add/remove actions, extracted into a hook so their try/catch branching does not inflate
 // the main component's cyclomatic complexity. Each persists server-side and refreshes the list.
@@ -333,7 +354,7 @@ const ExclusionsPanel = ({t, exclusions, onRemove}) => {
 
 // Lists saved execution snapshots (most recent first) with a per-row View control that reloads the
 // stored JSON into the viewer. Hidden when there are none.
-const SnapshotsPanel = ({t, snapshots, onView}) => {
+const SnapshotsPanel = ({t, snapshots, onView, onCompare}) => {
     if (!snapshots.length) {
         return null;
     }
@@ -346,7 +367,11 @@ const SnapshotsPanel = ({t, snapshots, onView}) => {
                 {snapshots.map(snapshot => (
                     <li key={snapshot.path} className={styles.js_exclusions_item}>
                         <span className={styles.js_exclusions_path}>{snapshot.name}</span>
-                        <Button size="default" label={t('label.viewSnapshot')} onClick={() => onView(snapshot.url)}/>
+                        <span className={styles.js_snapshot_actions}>
+                            {/* View loads it as the current tree; Compare loads it as the diff baseline. */}
+                            <Button size="default" label={t('label.viewSnapshot')} onClick={() => onView(snapshot.url)}/>
+                            <Button size="default" label={t('label.compareSnapshot')} onClick={() => onCompare(snapshot.url)}/>
+                        </span>
                     </li>
                 ))}
             </ul>
@@ -397,7 +422,7 @@ export const JcrStatsAdmin = () => {
     const {handleExclude, handleRemoveExclusion} = useExclusionActions({addExclusion, removeExclusion, refetchExclusions, setStatus});
     const {data: snapshotsData, refetch: refetchSnapshots} = useQuery(GET_SNAPSHOTS, {fetchPolicy: 'network-only'});
     const snapshots = readSnapshots(snapshotsData);
-    const handleViewSnapshot = useSnapshotLoader({setFocused, setTree, setTreePath, setView, setStatus});
+    const {handleViewSnapshot, handleCompareSnapshot} = useSnapshotLoader({setFocused, setTree, setTreePath, setView, setStatus, setBaseline});
     // Refresh the saved-execution list whenever a run finishes (a snapshot is auto-saved on completion).
     useEffect(() => {
         if (!computing) {
@@ -776,7 +801,7 @@ export const JcrStatsAdmin = () => {
 
             <ExclusionsPanel t={t} exclusions={exclusions} onRemove={handleRemoveExclusion}/>
 
-            <SnapshotsPanel t={t} snapshots={snapshots} onView={handleViewSnapshot}/>
+            <SnapshotsPanel t={t} snapshots={snapshots} onView={handleViewSnapshot} onCompare={handleCompareSnapshot}/>
 
             {computing && (
                 <RunningProgress

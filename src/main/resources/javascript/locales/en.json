@@ -39,6 +39,7 @@
     "savedExecutions": "Saved executions",
     "snapshotsHint": "Each completed computation is saved automatically. Open one to view its flamegraph.",
     "viewSnapshot": "View",
+    "compareSnapshot": "Compare",
     "diffBaseline": "Baseline",
     "diffCurrent": "Current",
     "diffDelta": "Change",

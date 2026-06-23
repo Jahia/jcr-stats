@@ -391,3 +391,9 @@
   color: #222829;
   word-break: break-all;
 }
+
+.js_snapshot_actions {
+  display: flex;
+  gap: var(--spacing-small, 8px);
+  flex-shrink: 0;
+}
