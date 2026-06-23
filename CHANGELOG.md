@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Path exclusions** — Paths can be excluded from the computation (the path and its whole subtree are skipped). Click a frame in the flamegraph and choose **Exclude this path**; excluded paths are listed with a **Remove** control. Exclusions are persisted as an OSGi configuration file (`${karaf.etc}/org.jahia.community.jcrstats.cfg`, property `jcrStats.excludedPaths`) via a `ManagedService`, so they survive restarts and can also be edited by hand. New GraphQL ops: `jcrStats.exclusions` (query), `jcrStats.addExclusion(path)` / `jcrStats.removeExclusion(path)` (mutations). Exclusions take effect on the next computation.
 - **Server-side cancellation** — New `jcrStats.cancel` mutation and a `cancelled` flag on `jcrStats.status`. The traversal now polls a cooperative cancellation flag at the start of every node, so a running job stops between nodes (never mid-JCR-operation).
 
+### Changed
+
+- **Unified data store / simpler comparison UI** — **Load data** now also stores the loaded file as a server snapshot (new `jcrStats.saveSnapshot` mutation), so loaded data joins the **Saved executions** history like a computed run. The standalone **Compare with…** button (file-based baseline upload) was removed — comparison is now driven from the Saved executions list (**View** one run, **Compare** another). The diff view itself is unchanged.
+
 ### Fixed
 
 - **The "Cancel" button now actually stops the computation** — Previously it only stopped client-side polling while the server job kept running to completion (the message even said so). It now calls `jcrStats.cancel`, which stops the server-side traversal; the UI reports "Computation cancelled."

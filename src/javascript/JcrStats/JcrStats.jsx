@@ -1,10 +1,10 @@
 import React, {useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo} from 'react';
 import {useLazyQuery, useMutation, useQuery} from '@apollo/client';
 import {useTranslation} from 'react-i18next';
-import {Button, Loader, Typography, Bar, Download, Upload, Compare} from '@jahia/moonstone';
+import {Button, Loader, Typography, Bar, Download, Upload} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT, GET_EXCLUSIONS, ADD_EXCLUSION, REMOVE_EXCLUSION, GET_SNAPSHOTS} from './JcrStats.gql';
+import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT, GET_EXCLUSIONS, ADD_EXCLUSION, REMOVE_EXCLUSION, GET_SNAPSHOTS, SAVE_SNAPSHOT} from './JcrStats.gql';
 import {
     formatBytes,
     formatDuration,
@@ -397,7 +397,6 @@ export const JcrStatsAdmin = () => {
     const pollStartRef = useRef(0);
     const containerRef = useRef(null);
     const fileInputRef = useRef(null);
-    const baselineInputRef = useRef(null);
     // H-5: ref for the results region so focus can be moved to it on view change
     const resultsRegionRef = useRef(null);
     // Tracks real unmount so an in-flight result fetch is only discarded when the component is gone —
@@ -417,6 +416,7 @@ export const JcrStatsAdmin = () => {
     const [cancelComputation] = useMutation(CANCEL);
     const [addExclusion] = useMutation(ADD_EXCLUSION);
     const [removeExclusion] = useMutation(REMOVE_EXCLUSION);
+    const [saveSnapshot] = useMutation(SAVE_SNAPSHOT);
     const {data: exclusionsData, refetch: refetchExclusions} = useQuery(GET_EXCLUSIONS, {fetchPolicy: 'network-only'});
     const exclusions = readExclusions(exclusionsData);
     const {handleExclude, handleRemoveExclusion} = useExclusionActions({addExclusion, removeExclusion, refetchExclusions, setStatus});
@@ -586,12 +586,6 @@ export const JcrStatsAdmin = () => {
         }
     };
 
-    const openBaselineDialog = () => {
-        if (baselineInputRef.current) {
-            baselineInputRef.current.click();
-        }
-    };
-
     const handleCompute = async () => {
         // H-3 (ergonomy): block a blank path instead of silently traversing the whole repo from '/'.
         const targetPath = (path || '').trim();
@@ -694,21 +688,12 @@ export const JcrStatsAdmin = () => {
             setTree(loaded);
             setView(VIEW_FLAMEGRAPH);
             setStatus(SUCCESS_LOADED);
+            // Persist the loaded data as a server snapshot so it joins the saved-executions history.
+            const json = JSON.stringify({format: SAVE_FORMAT, version: 1, path: loadedPath, tree: loaded});
+            saveSnapshot({variables: {json}})
+                .then(refetchSnapshots)
+                .catch(err => console.error('[jcr-stats] failed to store loaded snapshot', err));
         }, ERROR_LOAD);
-    };
-
-    const handleBaselineSelected = event => {
-        const file = event.target.files && event.target.files[0];
-        event.target.value = '';
-        if (!file) {
-            return;
-        }
-
-        readFile(file, ({tree: loaded}) => {
-            setBaseline(loaded);
-            setView(VIEW_DIFF);
-            setStatus(SUCCESS_BASELINE);
-        }, ERROR_BASELINE);
     };
 
     const focusUrl = focused ? buildJContentUrl(focused.path) : null;
@@ -764,11 +749,9 @@ export const JcrStatsAdmin = () => {
                     </select>
                     <Button size="big" color="accent" icon={<Bar/>} label={t('label.compute')} isDisabled={computing} onClick={handleCompute}/>
                     <Button size="big" icon={<Upload/>} label={t('label.load')} isDisabled={computing} onClick={openLoadDialog}/>
-                    <Button size="big" icon={<Compare/>} label={t('label.compareWith')} isDisabled={computing} onClick={openBaselineDialog}/>
                     {/*
-                      H-3: Hidden file inputs are now clipped (sr-only) rather than display:none
-                      so AT can discover them, and each has an associated <label> for a proper
-                      accessible name. The buttons above still trigger them programmatically.
+                      H-3: Hidden file input is clipped (sr-only) rather than display:none so AT can
+                      discover it, with an associated <label>. The Load button triggers it programmatically.
                     */}
                     <label htmlFor="jcrstats-load-input" className={styles.js_sr_only}>
                         {t('label.loadFileLabel')}
@@ -782,19 +765,6 @@ export const JcrStatsAdmin = () => {
                         className={styles.js_sr_only}
                         tabIndex={-1}
                         onChange={handleFileSelected}
-                    />
-                    <label htmlFor="jcrstats-baseline-input" className={styles.js_sr_only}>
-                        {t('label.baselineFileLabel')}
-                    </label>
-                    <input
-                        ref={baselineInputRef}
-                        id="jcrstats-baseline-input"
-                        data-testid="jcrstats-baseline-input"
-                        type="file"
-                        accept="application/json,.json"
-                        className={styles.js_sr_only}
-                        tabIndex={-1}
-                        onChange={handleBaselineSelected}
                     />
                 </div>
             </section>

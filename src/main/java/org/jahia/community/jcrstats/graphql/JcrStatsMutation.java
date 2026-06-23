@@ -42,6 +42,17 @@ public class JcrStatsMutation {
     }
 
     @GraphQLField
+    @GraphQLName("saveSnapshot")
+    @GraphQLDescription("Stores a snapshot JSON (e.g. a file loaded in the UI) alongside the auto-saved execution snapshots, so loaded data joins the saved-executions history. Returns true on success.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean saveSnapshot(
+            @GraphQLName("json")
+            @GraphQLDescription("Snapshot JSON in the jcr-stats export envelope (format jcr-stats-flamegraph)")
+            String json) {
+        return new JcrStatsComputer().saveSnapshot(json) != null;
+    }
+
+    @GraphQLField
     @GraphQLName("addExclusion")
     @GraphQLDescription("Adds an absolute JCR path to the exclusion list: the path and its whole subtree are skipped in future computations. Persisted to the OSGi configuration file. Returns true on success, false if the path is invalid or could not be saved.")
     @GraphQLRequiresPermission("jcrStatsAdmin")

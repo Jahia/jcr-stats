@@ -57,6 +57,14 @@ export const REMOVE_EXCLUSION = gql`
     }
 `;
 
+export const SAVE_SNAPSHOT = gql`
+    mutation JcrStatsSaveSnapshot($json: String!) {
+        jcrStats {
+            saveSnapshot(json: $json)
+        }
+    }
+`;
+
 export const GET_SNAPSHOTS = gql`
     query JcrStatsSnapshots {
         jcrStats {

@@ -87,8 +87,11 @@ public class JcrStatsComputer {
     private static final String SNAPSHOT_FORMAT = "jcr-stats-flamegraph";
     // Snapshot tree depth — keep in sync with the MAX_DEPTH coupling documented in CHANGELOG Notes.
     private static final int SNAPSHOT_MAX_DEPTH = 6;
+    // Millis included so two snapshots saved in the same second get distinct file names (no overwrite).
     private static final DateTimeFormatter SNAPSHOT_NAME_FORMATTER =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss");
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss-SSS");
+    /** Max accepted size for an externally-supplied snapshot (defends the saveSnapshot path). */
+    private static final int MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024;
 
     /**
      * Computes the size statistics of the subtree rooted at {@code path} without writing anything.
@@ -324,17 +327,39 @@ public class JcrStatsComputer {
      * — snapshotting must not fail the computation).
      */
     public String writeJsonSnapshot(NodeStats tree, String computedPath) {
-        final String json = buildSnapshotJson(tree, computedPath);
+        return storeSnapshot(buildSnapshotJson(tree, computedPath));
+    }
+
+    /**
+     * Stores an externally-supplied snapshot JSON (e.g. a file loaded in the UI) alongside the
+     * auto-saved ones, so loaded data joins the saved-executions history. Validates size and that it
+     * is a recognized jcr-stats envelope (the UI re-validates the full structure on load). Returns the
+     * stored JCR path, or {@code null} if rejected/failed.
+     */
+    public String saveSnapshot(String json) {
+        if (json == null || json.isEmpty() || json.length() > MAX_SNAPSHOT_BYTES) {
+            LOGGER.warn("Rejected snapshot save: empty or larger than {} bytes", MAX_SNAPSHOT_BYTES);
+            return null;
+        }
+        if (!json.contains("\"format\":\"" + SNAPSHOT_FORMAT + "\"")) {
+            LOGGER.warn("Rejected snapshot save: not a recognized jcr-stats snapshot envelope");
+            return null;
+        }
+        return storeSnapshot(json);
+    }
+
+    /** Uploads the given snapshot JSON as a new timestamped {@code jnt:file} under {@link #SNAPSHOTS_PATH}. */
+    private String storeSnapshot(String json) {
         final String fileName = "jcr-stats-" + SNAPSHOT_NAME_FORMATTER.format(LocalDateTime.now()) + ".json";
         try (InputStream in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))) {
             final JCRNodeWrapper folder = mkdirs(SNAPSHOTS_PATH);
             folder.uploadFile(fileName, in, MediaType.APPLICATION_JSON_VALUE);
             folder.saveSession();
             final String storedPath = folder.getPath() + FileSystem.SEPARATOR + fileName;
-            LOGGER.info("Saved JSON execution snapshot to {}", storedPath);
+            LOGGER.info("Saved JSON snapshot to {}", storedPath);
             return storedPath;
         } catch (IOException | RepositoryException e) {
-            LOGGER.error("Failed to write JSON execution snapshot for path {}", computedPath, e);
+            LOGGER.error("Failed to write JSON snapshot", e);
             return null;
         }
     }
