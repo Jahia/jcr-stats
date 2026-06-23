@@ -27,6 +27,8 @@ import {
     ERROR_BASELINE,
     ERROR_SAVE,
     ERROR_DELETE,
+    ERROR_EXCLUDE,
+    ERROR_UNEXCLUDE,
     SUCCESS_COMPUTED,
     SUCCESS_LOADED,
     SUCCESS_BASELINE,
@@ -146,22 +148,26 @@ const useExclusionActions = ({addExclusion, removeExclusion, refetchExclusions, 
                 await refetchExclusions();
                 setStatus(SUCCESS_EXCLUDED);
             } else {
-                setStatus(ERROR_COMPUTE);
+                setStatus(ERROR_EXCLUDE);
             }
         } catch (err) {
             console.error('[jcr-stats] failed to add exclusion', err);
-            setStatus(ERROR_COMPUTE);
+            setStatus(ERROR_EXCLUDE);
         }
     }, [addExclusion, refetchExclusions, setStatus]);
 
     const handleRemoveExclusion = useCallback(async excludedPath => {
         try {
-            await removeExclusion({variables: {path: excludedPath}});
-            await refetchExclusions();
-            setStatus(SUCCESS_UNEXCLUDED);
+            const {data} = await removeExclusion({variables: {path: excludedPath}});
+            if (data && data.jcrStats && data.jcrStats.removeExclusion) {
+                await refetchExclusions();
+                setStatus(SUCCESS_UNEXCLUDED);
+            } else {
+                setStatus(ERROR_UNEXCLUDE);
+            }
         } catch (err) {
             console.error('[jcr-stats] failed to remove exclusion', err);
-            setStatus(ERROR_COMPUTE);
+            setStatus(ERROR_UNEXCLUDE);
         }
     }, [removeExclusion, refetchExclusions, setStatus]);
 
@@ -756,19 +762,23 @@ export const JcrStatsAdmin = () => {
         }
 
         readFile(file, ({tree: loaded, path: loadedPath}) => {
+            // Show the loaded tree/view immediately, but DEFER the status banner until the save
+            // resolves: setting SUCCESS_LOADED up-front would flash a success message that
+            // ERROR_SAVE then overwrites on a save failure (a misleading success flash).
             setFocused(null);
             setTreePath(loadedPath);
             setTree(loaded);
             setView(VIEW_FLAMEGRAPH);
-            setStatus(SUCCESS_LOADED);
             // Persist the loaded data as a server snapshot so it joins the saved-executions history.
             const json = JSON.stringify({format: SAVE_FORMAT, version: 1, path: loadedPath, tree: loaded});
             // C-3: on save failure, surface it (ERROR_SAVE) instead of only console.error while still
             // claiming success; refetch wrapped in an arrow so an Apollo refetch signature change can't
-            // pass the resolved snapshot value as refetch variables.
+            // pass the resolved snapshot value as refetch variables. SUCCESS_LOADED is set ONLY once the
+            // save succeeds, so the success banner never precedes a save error.
             saveSnapshot({variables: {json}})
                 .then(({data}) => {
                     if (data && data.jcrStats && data.jcrStats.saveSnapshot) {
+                        setStatus(SUCCESS_LOADED);
                         refetchSnapshots();
                     } else {
                         setStatus(ERROR_SAVE);

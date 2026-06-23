@@ -66,6 +66,16 @@ public class JcrStatsConfigTest {
         assertThat(JcrStatsConfig.isValidPath(null)).isFalse();
     }
 
+    @Test
+    public void isValidPath_dotDotInsideSegmentIsValid_butAsSegmentIsRejected() {
+        // ".." inside a legitimate node name (a substring, not a whole segment) must be accepted.
+        assertThat(JcrStatsConfig.isValidPath("/sites/my..site/files")).isTrue();
+        // ".." as a complete path segment is a traversal marker and must be rejected.
+        assertThat(JcrStatsConfig.isValidPath("/sites/../etc")).isFalse();
+        // "." as a complete path segment is likewise rejected.
+        assertThat(JcrStatsConfig.isValidPath("/sites/./etc")).isFalse();
+    }
+
     // --- isExcluded ---
 
     @Test

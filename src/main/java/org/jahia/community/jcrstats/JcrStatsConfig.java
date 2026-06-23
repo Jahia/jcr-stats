@@ -121,7 +121,12 @@ public class JcrStatsConfig implements ManagedService {
     /**
      * Validates an excluded path: a genuine absolute JCR path — one or more {@code /segment} parts
      * where a segment is non-empty and contains neither {@code /} nor a comma (the storage separator).
-     * Also bounded length, no whitespace/control characters, and free of {@code ..} segments.
+     * Also bounded length, no whitespace/control characters, and free of {@code .} or {@code ..}
+     * <em>segments</em> (path-traversal markers).
+     *
+     * <p>The {@code ..} (and {@code .}) check is segment-scoped, not a substring match: a legitimate
+     * node name such as {@code my..site} in {@code /sites/my..site/files} is accepted, while a real
+     * traversal segment such as the {@code ..} in {@code /sites/../etc} is rejected.</p>
      *
      * <p>Implemented with linear string checks instead of a regex: the equivalent pattern
      * {@code (/[^/,]+)+} has a nested quantifier that risks catastrophic backtracking (Sonar S5998).
@@ -131,8 +136,15 @@ public class JcrStatsConfig implements ManagedService {
     static boolean isValidPath(String path) {
         if (path == null || path.length() < 2 || path.length() > MAX_PATH_LENGTH
                 || !path.startsWith("/") || path.endsWith("/")
-                || path.contains("//") || path.contains(",") || path.contains("..")) {
+                || path.contains("//") || path.contains(",")) {
             return false;
+        }
+        // Reject "." or ".." only as a complete path segment (traversal), not as a substring inside
+        // an otherwise legitimate node name.
+        for (String segment : path.split("/")) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return false;
+            }
         }
         for (int i = 0; i < path.length(); i++) {
             final char c = path.charAt(i);

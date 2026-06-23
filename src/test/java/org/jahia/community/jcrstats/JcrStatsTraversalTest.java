@@ -123,11 +123,11 @@ public class JcrStatsTraversalTest {
         JCRNodeWrapper root = mockNode("/r", NO_DATA, mockNode("/r/a", 100L));
 
         // A cancellation flag that is already set must stop the traversal at the first node, and it must
-        // do so via the dedicated cancellation exception (not just any RepositoryException) so the
-        // service can distinguish a clean cancel from a genuine failure.
+        // do so via the dedicated cancellation exception type (not just any RepositoryException) so the
+        // service can distinguish a clean cancel from a genuine failure — that exception type is the
+        // real contract JcrStatsService relies on.
         assertThatThrownBy(() -> computer.computeNode(null, root, new AtomicLong(), () -> true, path -> false))
-                .isInstanceOf(RepositoryException.class)
-                .hasMessageContaining("cancelled");
+                .isInstanceOf(JcrStatsComputer.CancelledException.class);
     }
 
     @Test

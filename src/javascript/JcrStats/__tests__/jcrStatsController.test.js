@@ -5,10 +5,20 @@ import {
     readSnapshots,
     MAX_POLL_MS,
     ERROR_COMPUTE,
+    ERROR_EXCLUDE,
+    ERROR_UNEXCLUDE,
+    ERROR_STATUSES,
     SUCCESS_COMPUTED,
     INFO_CANCELLED,
     INFO_TIMEOUT
 } from '../jcrStatsController.js';
+
+describe('exclusion error statuses', () => {
+    it('ERROR_STATUSES includes the dedicated exclude/unexclude statuses', () => {
+        expect(ERROR_STATUSES).toContain(ERROR_EXCLUDE);
+        expect(ERROR_STATUSES).toContain(ERROR_UNEXCLUDE);
+    });
+});
 
 describe('readExclusions / readSnapshots null-safety', () => {
     it('readExclusions returns [] for null / undefined / missing nesting', () => {

@@ -19,6 +19,8 @@ export const ERROR_LOAD = 'errorLoad';
 export const ERROR_BASELINE = 'errorBaseline';
 export const ERROR_SAVE = 'errorSave';
 export const ERROR_DELETE = 'errorDelete';
+export const ERROR_EXCLUDE = 'errorExclude';
+export const ERROR_UNEXCLUDE = 'errorUnexclude';
 export const SUCCESS_COMPUTED = 'success';
 export const SUCCESS_LOADED = 'successLoaded';
 export const SUCCESS_BASELINE = 'successBaseline';
@@ -29,7 +31,9 @@ export const INFO_CANCELLED = 'infoCancelled';
 export const INFO_CANCEL_MAYBE = 'infoCancelMaybe';
 export const INFO_TIMEOUT = 'infoTimeout';
 
-export const ERROR_STATUSES = [ERROR_COMPUTE, ERROR_LOAD, ERROR_BASELINE, ERROR_SAVE, ERROR_DELETE];
+export const ERROR_STATUSES = [
+    ERROR_COMPUTE, ERROR_LOAD, ERROR_BASELINE, ERROR_SAVE, ERROR_DELETE, ERROR_EXCLUDE, ERROR_UNEXCLUDE
+];
 export const SUCCESS_STATUSES = [
     SUCCESS_COMPUTED, SUCCESS_LOADED, SUCCESS_BASELINE, SUCCESS_EXCLUDED, SUCCESS_UNEXCLUDED, SUCCESS_DELETED
 ];

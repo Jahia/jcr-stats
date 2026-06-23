@@ -403,8 +403,10 @@ public class JcrStatsComputer {
                     session.save();
                     final String storedPath = folder.getPath() + FileSystem.SEPARATOR + fileName;
                     LOGGER.info("Saved JSON snapshot to {}", storedPath);
-                    // Best-effort retention: prune the oldest snapshots beyond the cap.
-                    pruneOldSnapshots(session, folder);
+                    // Best-effort retention: prune the oldest snapshots beyond the cap. Re-fetch the
+                    // folder fresh from the now-saved session rather than reusing the pre-save
+                    // reference, which may be stale after the upload/save.
+                    pruneOldSnapshots(session);
                     return storedPath;
                 } catch (IOException e) {
                     throw new RepositoryException("Failed to serialize JSON snapshot", e);
@@ -417,12 +419,17 @@ public class JcrStatsComputer {
     }
 
     /**
-     * Best-effort retention: keeps at most {@link #MAX_SNAPSHOTS} most recent snapshot files in
-     * {@code folder}, removing the oldest beyond that cap. Failures are logged, never thrown — pruning
-     * must not fail a successful save.
+     * Best-effort retention: keeps at most {@link #MAX_SNAPSHOTS} most recent snapshot files under
+     * {@link #SNAPSHOTS_PATH}, removing the oldest beyond that cap. Failures are logged, never thrown —
+     * pruning must not fail a successful save.
+     *
+     * <p>The snapshots folder is re-fetched fresh from {@code session} (which has already been saved by
+     * the caller) rather than reusing a {@link JCRNodeWrapper} obtained before {@code save()}, which
+     * could be a stale reference. Still runs inside the caller's {@code doExecuteWithSystemSession}.</p>
      */
-    private void pruneOldSnapshots(JCRSessionWrapper session, JCRNodeWrapper folder) {
+    private void pruneOldSnapshots(JCRSessionWrapper session) {
         try {
+            final JCRNodeWrapper folder = session.getNode(SNAPSHOTS_PATH);
             final List<JCRNodeWrapper> files = new ArrayList<>();
             final JCRNodeIteratorWrapper it = folder.getNodes();
             while (it.hasNext()) {
