@@ -4,7 +4,7 @@ import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography, Bar, Download, Upload, Compare} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {COMPUTE, GET_STATUS, GET_RESULT} from './JcrStats.gql';
+import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT} from './JcrStats.gql';
 import {
     formatBytes,
     formatDuration,
@@ -97,6 +97,12 @@ const handlePolledStatus = (current, ctx) => {
         return false;
     }
 
+    if (current.cancelled) {
+        // Server job stopped because cancellation was requested — a clean stop, not an error.
+        setters.stop(INFO_CANCELLED);
+        return false;
+    }
+
     if (current.error) {
         setters.stop(ERROR_COMPUTE);
         return false;
@@ -151,7 +157,7 @@ const RunningProgress = ({t, elapsedMs, visitedCount, onCancel}) => {
                     <div className={styles.js_progress_bar}/>
                 </div>
             </div>
-            {/* H-2 (ergonomy): client-side cancel — stops polling; server job may continue. */}
+            {/* Cancel: requests server-side cancellation (job polls the flag between nodes), then stops watching. */}
             <Button size="default" label={t('label.cancel')} onClick={onCancel}/>
         </div>
     );
@@ -262,6 +268,7 @@ export const JcrStatsAdmin = () => {
     }, [t]);
 
     const [startCompute] = useMutation(COMPUTE);
+    const [cancelComputation] = useMutation(CANCEL);
     const [fetchResult] = useLazyQuery(GET_RESULT, {fetchPolicy: 'network-only'});
     const [fetchStatus] = useLazyQuery(GET_STATUS, {fetchPolicy: 'network-only'});
     // While a computation runs, poll its status; the heavy traversal happens server-side off-request.
@@ -450,9 +457,15 @@ export const JcrStatsAdmin = () => {
         }
     };
 
-    // Client-side cancel: there is no server cancel, so we just stop watching and tell the user the
-    // job may still be running on the server.
-    const handleCancel = () => {
+    // Server-side cancel: ask the server to stop the running job (it polls the flag between nodes),
+    // then stop watching. The traversal aborts shortly after; status.cancelled would also reflect it.
+    const handleCancel = async () => {
+        try {
+            await cancelComputation();
+        } catch (err) {
+            console.error('[jcr-stats] failed to cancel computation', err);
+        }
+
         setComputing(false);
         setStatus(INFO_CANCELLED);
     };

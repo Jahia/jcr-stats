@@ -8,6 +8,14 @@ export const COMPUTE = gql`
     }
 `;
 
+export const CANCEL = gql`
+    mutation JcrStatsCancel {
+        jcrStats {
+            cancel
+        }
+    }
+`;
+
 export const GET_STATUS = gql`
     query JcrStatsStatus {
         jcrStats {
@@ -19,6 +27,7 @@ export const GET_STATUS = gql`
                 startedAt
                 elapsedMs
                 visitedCount
+                cancelled
             }
         }
     }

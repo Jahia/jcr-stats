@@ -35,6 +35,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 /**
  * Reusable JCR size-computation engine.
@@ -91,7 +92,16 @@ public class JcrStatsComputer {
      * long-running computation can report live progress (a JCR tree has no known total up front).
      */
     public NodeStats computeStats(String path, AtomicLong visited) throws RepositoryException {
-        return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path, visited));
+        return computeStats(path, visited, () -> false);
+    }
+
+    /**
+     * As {@link #computeStats(String, AtomicLong)}, but cooperatively cancellable: {@code cancelled}
+     * is polled at the start of every node so a long-running asynchronous job can be stopped between
+     * nodes (never mid-JCR-operation, which could leave the session inconsistent).
+     */
+    public NodeStats computeStats(String path, AtomicLong visited, BooleanSupplier cancelled) throws RepositoryException {
+        return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path, visited, cancelled));
     }
 
     /**
@@ -286,12 +296,12 @@ public class JcrStatsComputer {
         return sb.toString();
     }
 
-    private NodeStats computeSize(JCRSessionWrapper session, String currentPath, AtomicLong visited) throws RepositoryException {
+    private NodeStats computeSize(JCRSessionWrapper session, String currentPath, AtomicLong visited, BooleanSupplier cancelled) throws RepositoryException {
         // Refresh once at the entry rather than once per node: a read-only traversal does not need to
         // re-sync the session view at every level, and per-node refresh was needless overhead.
         session.refresh(false);
         final JCRNodeWrapper root = session.getNode(currentPath, false);
-        return computeNode(session, root, visited);
+        return computeNode(session, root, visited, cancelled);
     }
 
     /**
@@ -305,7 +315,12 @@ public class JcrStatsComputer {
      * <p>Package-private to allow unit-testing the traversal/aggregation logic with mocked nodes,
      * without a live JCR session.</p>
      */
-    NodeStats computeNode(JCRSessionWrapper session, JCRNodeWrapper node, AtomicLong visited) throws RepositoryException {
+    NodeStats computeNode(JCRSessionWrapper session, JCRNodeWrapper node, AtomicLong visited, BooleanSupplier cancelled) throws RepositoryException {
+        // Cooperative cancellation: checked at the start of every node so an async job stops between
+        // nodes (never mid-JCR-operation). Distinct exception so the per-branch handlers re-throw it.
+        if (cancelled.getAsBoolean()) {
+            throw new CancelledException();
+        }
         // Defensive cap: abort cleanly before an over-broad path can exhaust the heap. The async
         // service records this as lastError; the synchronous GraphQL path catches it and returns a
         // sentinel (-1 / null). Generous ceiling, so legitimate traversals never hit it.
@@ -337,9 +352,9 @@ public class JcrStatsComputer {
                 break;
             }
             try {
-                currentNodeStats.addSubNodeStats(computeNode(session, child, visited));
-            } catch (TraversalLimitException e) {
-                throw e; // hard MAX_VISITED_NODES limit — abort the whole traversal
+                currentNodeStats.addSubNodeStats(computeNode(session, child, visited, cancelled));
+            } catch (TraversalAbortException e) {
+                throw e; // cancellation or the hard MAX_VISITED_NODES limit — abort the whole traversal
             } catch (RepositoryException | RuntimeException e) {
                 LOGGER.warn("Skipping a child of {} — could not compute its size: {}",
                         currentNodeStats.getPath(), e.toString());
@@ -380,15 +395,33 @@ public class JcrStatsComputer {
     }
 
     /**
-     * Signals that {@link #MAX_VISITED_NODES} was reached. A distinct type so the best-effort error
-     * handlers in {@link #computeNode} re-throw it (aborting the whole traversal) rather than treating
-     * it as a skippable bad branch.
+     * Base type for the conditions that must abort the WHOLE traversal — cancellation and the
+     * {@link #MAX_VISITED_NODES} cap. The best-effort error handlers in {@link #computeNode} re-throw
+     * this (rather than treating it as a skippable bad branch), so it propagates to the caller.
      */
-    private static final class TraversalLimitException extends RepositoryException {
+    private abstract static class TraversalAbortException extends RepositoryException {
+        private static final long serialVersionUID = 1L;
+
+        TraversalAbortException(String message) {
+            super(message);
+        }
+    }
+
+    /** Signals that {@link #MAX_VISITED_NODES} was reached. */
+    private static final class TraversalLimitException extends TraversalAbortException {
         private static final long serialVersionUID = 1L;
 
         TraversalLimitException(String message) {
             super(message);
+        }
+    }
+
+    /** Signals that the caller requested cancellation (via the {@code cancelled} supplier). */
+    private static final class CancelledException extends TraversalAbortException {
+        private static final long serialVersionUID = 1L;
+
+        CancelledException() {
+            super("JCR stats traversal cancelled.");
         }
     }
 

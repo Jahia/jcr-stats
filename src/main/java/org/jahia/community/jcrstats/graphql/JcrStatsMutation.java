@@ -32,6 +32,15 @@ public class JcrStatsMutation {
     }
 
     @GraphQLField
+    @GraphQLName("cancel")
+    @GraphQLDescription("Requests cancellation of the running asynchronous computation. Returns true if a job was running and cancellation was requested, false if nothing was running.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean cancel() {
+        final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
+        return service != null && service.cancel();
+    }
+
+    @GraphQLField
     @GraphQLName("computeSize")
     @GraphQLDescription("Computes the size of the subtree at the given path, writes the flamegraph file into the JCR and returns the aggregated result. Returns null on error.")
     @GraphQLRequiresPermission("jcrStatsAdmin")

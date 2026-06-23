@@ -95,10 +95,10 @@ public class JcrStatsQuery {
     public GqlJcrStatsStatus status() {
         final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
         if (service == null) {
-            return new GqlJcrStatsStatus(false, null, null, false, 0L, 0L, 0L);
+            return new GqlJcrStatsStatus(false, null, null, false, 0L, 0L, 0L, false);
         }
         return new GqlJcrStatsStatus(service.isRunning(), service.getLastPath(), service.getLastError(), service.getLastResult() != null,
-                service.getStartedAt(), service.getElapsedMs(), service.getVisitedCount());
+                service.getStartedAt(), service.getElapsedMs(), service.getVisitedCount(), service.isLastRunCancelled());
     }
 
     @GraphQLField
@@ -162,9 +162,10 @@ public class JcrStatsQuery {
         private final long startedAt;
         private final long elapsedMs;
         private final long visitedCount;
+        private final boolean cancelled;
 
         public GqlJcrStatsStatus(boolean running, String path, String error, boolean hasResult,
-                long startedAt, long elapsedMs, long visitedCount) {
+                long startedAt, long elapsedMs, long visitedCount, boolean cancelled) {
             this.running = running;
             this.path = path;
             this.error = error;
@@ -172,6 +173,7 @@ public class JcrStatsQuery {
             this.startedAt = startedAt;
             this.elapsedMs = elapsedMs;
             this.visitedCount = visitedCount;
+            this.cancelled = cancelled;
         }
 
         @GraphQLField
@@ -221,6 +223,13 @@ public class JcrStatsQuery {
         @GraphQLDescription("Number of nodes visited so far (live progress; no total is known up front)")
         public long getVisitedCount() {
             return visitedCount;
+        }
+
+        @GraphQLField
+        @GraphQLName("cancelled")
+        @GraphQLDescription("Whether the last/current run ended because it was cancelled (rather than completing or failing)")
+        public boolean isCancelled() {
+            return cancelled;
         }
     }
 

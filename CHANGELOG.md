@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.1.2] — Unreleased
 
+### Added
+
+- **Server-side cancellation** — New `jcrStats.cancel` mutation and a `cancelled` flag on `jcrStats.status`. The traversal now polls a cooperative cancellation flag at the start of every node, so a running job stops between nodes (never mid-JCR-operation).
+
 ### Fixed
 
+- **The "Cancel" button now actually stops the computation** — Previously it only stopped client-side polling while the server job kept running to completion (the message even said so). It now calls `jcrStats.cancel`, which stops the server-side traversal; the UI reports "Computation cancelled."
 - **Whole-site traversal no longer aborts on un-listable branches** — Walking a subtree that descends into an external data-source mount whose child names are not valid JCR paths (e.g. `cloud-dumps` nodes named with an ISO-8601 timestamp, where `:` is the namespace-prefix separator) raised `RepositoryException: Invalid path … ':' not valid name character` from the eager `getNodes()` listing and aborted the entire computation. When direct listing fails, the traversal now falls back to an `ISCHILDNODE` query whose path is escaped via `JCRContentUtils.sqlEncode`, recovering the valid children of that node instead of dropping the whole branch (the single un-representable node — which cannot be a JCR node at all — is simply omitted). A `WARN` is logged; only if the escaped query also fails is the node's subtree skipped. The hard `MAX_VISITED_NODES` safety limit still aborts as before.
 
 ### Tests

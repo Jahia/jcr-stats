@@ -28,6 +28,8 @@ public class JcrStatsService {
     private static final String GENERIC_ERROR = "Computation failed. Check server logs for details.";
 
     private final AtomicBoolean running = new AtomicBoolean(false);
+    // Cooperative cancellation flag: set by cancel(), polled by the running traversal between nodes.
+    private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
     private final AtomicLong visited = new AtomicLong();
     // S3077: NodeStats is a mutable object; an AtomicReference publishes it safely instead of a
     // bare volatile field (volatile only guarantees visibility of the reference, not the object).
@@ -37,6 +39,7 @@ public class JcrStatsService {
     private volatile long computedAt;
     private volatile long startedAt;
     private volatile long finishedAt;
+    private volatile boolean lastRunCancelled;
     // S3077: a volatile reference to a mutable ExecutorService is not thread-safe. Creating the
     // single-threaded executor once at construction and holding it in a final field is the correct
     // publication — final fields are safely visible to every thread without volatile.
@@ -61,19 +64,27 @@ public class JcrStatsService {
             return false;
         }
         lastError = null;
+        lastRunCancelled = false;
+        cancelRequested.set(false);
         visited.set(0L);
         startedAt = System.currentTimeMillis();
         finishedAt = 0L;
         executor.submit(() -> {
             LOGGER.info("JCR stats computation started for path {}", effectivePath);
             try {
-                final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited);
+                final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited, cancelRequested::get);
                 lastResult.set(tree);
                 lastPath = effectivePath;
                 computedAt = System.currentTimeMillis();
             } catch (RepositoryException | RuntimeException e) {
-                lastError = GENERIC_ERROR;
-                LOGGER.error("Asynchronous JCR stats computation failed for path {}", effectivePath, e);
+                if (cancelRequested.get()) {
+                    // Expected stop, not a failure: the traversal threw because cancellation was requested.
+                    lastRunCancelled = true;
+                    LOGGER.info("JCR stats computation cancelled for path {} after {} nodes", effectivePath, visited.get());
+                } else {
+                    lastError = GENERIC_ERROR;
+                    LOGGER.error("Asynchronous JCR stats computation failed for path {}", effectivePath, e);
+                }
             } finally {
                 finishedAt = System.currentTimeMillis();
                 running.set(false);
@@ -86,6 +97,25 @@ public class JcrStatsService {
 
     public boolean isRunning() {
         return running.get();
+    }
+
+    /**
+     * Requests cooperative cancellation of the in-progress computation. The running traversal polls
+     * this flag between nodes and stops shortly after. Returns {@code true} if a computation was
+     * running (so a cancellation was requested), {@code false} if there was nothing to cancel.
+     */
+    public boolean cancel() {
+        if (!running.get()) {
+            return false;
+        }
+        cancelRequested.set(true);
+        LOGGER.info("JCR stats computation cancellation requested");
+        return true;
+    }
+
+    /** Whether the last (or current) run ended because it was cancelled rather than completing/failing. */
+    public boolean isLastRunCancelled() {
+        return lastRunCancelled;
     }
 
     public NodeStats getLastResult() {

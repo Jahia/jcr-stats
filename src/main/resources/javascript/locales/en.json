@@ -44,7 +44,7 @@
     "errorLoad": "Could not load the snapshot: the file is not a valid JCR Stats snapshot.",
     "errorBaseline": "Could not load the baseline: the file is not a valid JCR Stats snapshot.",
     "cancel": "Cancel",
-    "infoCancelled": "Stopped watching the computation. The server job may still be running in the background.",
+    "infoCancelled": "Computation cancelled.",
     "infoTimeout": "The computation is taking longer than expected. Stopped watching; the server job may still be running.",
     "pathRequired": "Enter a JCR path to analyze.",
     "interactiveTitle": "Interactive flamegraph",
