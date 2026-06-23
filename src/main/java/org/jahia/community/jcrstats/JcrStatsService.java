@@ -65,6 +65,7 @@ public class JcrStatsService {
         startedAt = System.currentTimeMillis();
         finishedAt = 0L;
         executor.submit(() -> {
+            LOGGER.info("JCR stats computation started for path {}", effectivePath);
             try {
                 final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited);
                 lastResult.set(tree);
@@ -76,6 +77,8 @@ public class JcrStatsService {
             } finally {
                 finishedAt = System.currentTimeMillis();
                 running.set(false);
+                LOGGER.info("JCR stats computation finished for path {} in {} ms ({} nodes visited)",
+                        effectivePath, finishedAt - startedAt, visited.get());
             }
         });
         return true;
