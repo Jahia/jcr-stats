@@ -1,5 +1,6 @@
 package org.jahia.community.jcrstats;
 
+import org.jahia.osgi.BundleUtils;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.slf4j.Logger;
@@ -11,6 +12,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 /**
  * Runs JCR size computations asynchronously on a single background thread and caches the latest
@@ -69,10 +71,13 @@ public class JcrStatsService {
         visited.set(0L);
         startedAt = System.currentTimeMillis();
         finishedAt = 0L;
+        // Configured exclusions (if the config service is available) are removed from the totals.
+        final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
+        final Predicate<String> excludedPath = config == null ? p -> false : config::isExcluded;
         executor.submit(() -> {
             LOGGER.info("JCR stats computation started for path {}", effectivePath);
             try {
-                final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited, cancelRequested::get);
+                final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited, cancelRequested::get, excludedPath);
                 lastResult.set(tree);
                 lastPath = effectivePath;
                 computedAt = System.currentTimeMillis();

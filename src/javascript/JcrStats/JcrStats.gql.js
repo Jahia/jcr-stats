@@ -33,6 +33,30 @@ export const GET_STATUS = gql`
     }
 `;
 
+export const GET_EXCLUSIONS = gql`
+    query JcrStatsExclusions {
+        jcrStats {
+            exclusions
+        }
+    }
+`;
+
+export const ADD_EXCLUSION = gql`
+    mutation JcrStatsAddExclusion($path: String!) {
+        jcrStats {
+            addExclusion(path: $path)
+        }
+    }
+`;
+
+export const REMOVE_EXCLUSION = gql`
+    mutation JcrStatsRemoveExclusion($path: String!) {
+        jcrStats {
+            removeExclusion(path: $path)
+        }
+    }
+`;
+
 export const GET_RESULT = gql`
     query JcrStatsResult($maxDepth: Int) {
         jcrStats {

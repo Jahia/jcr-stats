@@ -40,7 +40,7 @@ public class JcrStatsTraversalTest {
         AtomicLong visited = new AtomicLong();
 
         // Act
-        NodeStats stats = computer.computeNode(null, root, visited, () -> false);
+        NodeStats stats = computer.computeNode(null, root, visited, () -> false, path -> false);
 
         // Assert: sizes roll up (300 + 100 + 200), all four nodes counted and visited exactly once
         assertThat(stats.getSize()).isEqualTo(600L);
@@ -55,7 +55,7 @@ public class JcrStatsTraversalTest {
         // Insertion order deliberately small-then-large; NodeStats must re-order size-descending.
         JCRNodeWrapper root = mockNode("/r", NO_DATA, small, large);
 
-        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false);
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false, path -> false);
 
         List<String> names = new ArrayList<>();
         stats.getSubNodeStats().forEach(child -> names.add(child.getName()));
@@ -66,7 +66,7 @@ public class JcrStatsTraversalTest {
     public void computeNode_leafWithData_readsJcrDataLength() throws Exception {
         JCRNodeWrapper leaf = mockNode("/r/file", 4096L);
 
-        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong(), () -> false);
+        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong(), () -> false, path -> false);
 
         assertThat(stats.getSize()).isEqualTo(4096L);
         assertThat(stats.getNodeCount()).isEqualTo(1L);
@@ -76,7 +76,7 @@ public class JcrStatsTraversalTest {
     public void computeNode_leafWithoutData_hasZeroSize() throws Exception {
         JCRNodeWrapper leaf = mockNode("/r/folder", NO_DATA);
 
-        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong(), () -> false);
+        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong(), () -> false, path -> false);
 
         assertThat(stats.getSize()).isZero();
     }
@@ -90,7 +90,7 @@ public class JcrStatsTraversalTest {
         when(node.getPath()).thenReturn("/sites/systemsite/files/cloud-dumps/modulesdump");
         when(node.getNodes()).thenThrow(new RepositoryException("Invalid path: ':' not valid name character"));
 
-        NodeStats stats = computer.computeNode(null, node, new AtomicLong(), () -> false);
+        NodeStats stats = computer.computeNode(null, node, new AtomicLong(), () -> false, path -> false);
 
         // The node itself is still counted, just with no children, and the whole job survives.
         assertThat(stats.getNodeCount()).isEqualTo(1L);
@@ -105,7 +105,7 @@ public class JcrStatsTraversalTest {
         JCRNodeWrapper good2 = mockNode("/r/b", 200L);
         JCRNodeWrapper root = mockNode("/r", NO_DATA, good1, bad, good2);
 
-        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false);
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false, path -> false);
 
         // The failing child is skipped; root + the two good children are counted and their sizes summed.
         assertThat(stats.getNodeCount()).isEqualTo(3L);
@@ -117,8 +117,22 @@ public class JcrStatsTraversalTest {
         JCRNodeWrapper root = mockNode("/r", NO_DATA, mockNode("/r/a", 100L));
 
         // A cancellation flag that is already set must stop the traversal at the first node.
-        assertThatThrownBy(() -> computer.computeNode(null, root, new AtomicLong(), () -> true))
+        assertThatThrownBy(() -> computer.computeNode(null, root, new AtomicLong(), () -> true, path -> false))
                 .isInstanceOf(RepositoryException.class);
+    }
+
+    @Test
+    public void computeNode_excludedChild_isSkippedWithItsSubtree() throws Exception {
+        JCRNodeWrapper keep = mockNode("/r/keep", 100L);
+        JCRNodeWrapper drop = mockNode("/r/drop", 999L, mockNode("/r/drop/child", 500L));
+        JCRNodeWrapper root = mockNode("/r", NO_DATA, keep, drop);
+
+        // Exclude /r/drop (and therefore its child) — only /r and /r/keep remain.
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false,
+                path -> path.equals("/r/drop"));
+
+        assertThat(stats.getNodeCount()).isEqualTo(2L);
+        assertThat(stats.getSize()).isEqualTo(100L);
     }
 
     // --- helpers ---

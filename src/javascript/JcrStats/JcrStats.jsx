@@ -4,7 +4,7 @@ import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography, Bar, Download, Upload, Compare} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT} from './JcrStats.gql';
+import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT, GET_EXCLUSIONS, ADD_EXCLUSION, REMOVE_EXCLUSION} from './JcrStats.gql';
 import {
     formatBytes,
     formatDuration,
@@ -40,11 +40,13 @@ const ERROR_BASELINE = 'errorBaseline';
 const SUCCESS_COMPUTED = 'success';
 const SUCCESS_LOADED = 'successLoaded';
 const SUCCESS_BASELINE = 'successBaseline';
+const SUCCESS_EXCLUDED = 'successExcluded';
+const SUCCESS_UNEXCLUDED = 'successUnexcluded';
 const INFO_CANCELLED = 'infoCancelled';
 const INFO_TIMEOUT = 'infoTimeout';
 
 const ERROR_STATUSES = [ERROR_COMPUTE, ERROR_LOAD, ERROR_BASELINE];
-const SUCCESS_STATUSES = [SUCCESS_COMPUTED, SUCCESS_LOADED, SUCCESS_BASELINE];
+const SUCCESS_STATUSES = [SUCCESS_COMPUTED, SUCCESS_LOADED, SUCCESS_BASELINE, SUCCESS_EXCLUDED, SUCCESS_UNEXCLUDED];
 
 const prefersReducedMotion = () =>
     typeof window !== 'undefined' &&
@@ -122,6 +124,42 @@ const handlePolledStatus = (current, ctx) => {
     return true;
 };
 
+// Safely reads the exclusions array out of the GET_EXCLUSIONS response. A module-level helper so the
+// short-circuit chain doesn't add to the main component's cyclomatic complexity.
+const readExclusions = data => (data && data.jcrStats && data.jcrStats.exclusions) || [];
+
+// Exclusion add/remove actions, extracted into a hook so their try/catch branching does not inflate
+// the main component's cyclomatic complexity. Each persists server-side and refreshes the list.
+const useExclusionActions = ({addExclusion, removeExclusion, refetchExclusions, setStatus}) => {
+    const handleExclude = useCallback(async excludedPath => {
+        try {
+            const {data} = await addExclusion({variables: {path: excludedPath}});
+            if (data && data.jcrStats && data.jcrStats.addExclusion) {
+                await refetchExclusions();
+                setStatus(SUCCESS_EXCLUDED);
+            } else {
+                setStatus(ERROR_COMPUTE);
+            }
+        } catch (err) {
+            console.error('[jcr-stats] failed to add exclusion', err);
+            setStatus(ERROR_COMPUTE);
+        }
+    }, [addExclusion, refetchExclusions, setStatus]);
+
+    const handleRemoveExclusion = useCallback(async excludedPath => {
+        try {
+            await removeExclusion({variables: {path: excludedPath}});
+            await refetchExclusions();
+            setStatus(SUCCESS_UNEXCLUDED);
+        } catch (err) {
+            console.error('[jcr-stats] failed to remove exclusion', err);
+            setStatus(ERROR_COMPUTE);
+        }
+    }, [removeExclusion, refetchExclusions, setStatus]);
+
+    return {handleExclude, handleRemoveExclusion};
+};
+
 // Computing progress block: spinner, elapsed/count text, indeterminate bar, cancel. Extracted to a
 // module-level component to keep the main component's render complexity bounded.
 const RunningProgress = ({t, elapsedMs, visitedCount, onCancel}) => {
@@ -187,7 +225,7 @@ const StatusBanner = ({t, status}) => {
 
 // Flamegraph view: caption (focused node or root summary + jContent link) and the mouse-only
 // react-flame-graph. Extracted to a module-level component to keep the main render's complexity low.
-const FlamegraphView = ({t, tree, focused, focusUrl, describeMetric, flameData, dimensions, containerRef, onFocusChange}) => {
+const FlamegraphView = ({t, tree, focused, focusUrl, describeMetric, flameData, dimensions, containerRef, onFocusChange, onExclude}) => {
     const caption = focused ?
         `${t('label.focused')}: ${focused.name} — ${describeMetric(focused.bytes, focused.nodeCount)}` :
         `${tree.name} — ${describeMetric(tree.size, tree.nodeCount)}`;
@@ -213,6 +251,14 @@ const FlamegraphView = ({t, tree, focused, focusUrl, describeMetric, flameData, 
                         {t('label.openJContent')}
                     </a>
                 )}
+                {focused && focused.path && (
+                    /* Exclude the clicked/focused node (and its subtree) from future computations. */
+                    <Button
+                        size="default"
+                        label={t('label.excludePath')}
+                        onClick={() => onExclude(focused.path)}
+                    />
+                )}
             </div>
             {flameData && (
                 /*
@@ -230,6 +276,28 @@ const FlamegraphView = ({t, tree, focused, focusUrl, describeMetric, flameData, 
                 </div>
             )}
         </>
+    );
+};
+
+// Lists the currently-excluded paths with a per-row Remove control. Hidden when there are none.
+const ExclusionsPanel = ({t, exclusions, onRemove}) => {
+    if (!exclusions.length) {
+        return null;
+    }
+
+    return (
+        <section className={styles.js_exclusions} aria-label={t('label.excludedPaths')}>
+            <Typography className={styles.js_label}>{t('label.excludedPaths')}</Typography>
+            <Typography className={styles.js_hint}>{t('label.excludeHint')}</Typography>
+            <ul className={styles.js_exclusions_list}>
+                {exclusions.map(excludedPath => (
+                    <li key={excludedPath} className={styles.js_exclusions_item}>
+                        <span className={styles.js_exclusions_path}>{excludedPath}</span>
+                        <Button size="default" label={t('label.removeExclusion')} onClick={() => onRemove(excludedPath)}/>
+                    </li>
+                ))}
+            </ul>
+        </section>
     );
 };
 
@@ -269,6 +337,11 @@ export const JcrStatsAdmin = () => {
 
     const [startCompute] = useMutation(COMPUTE);
     const [cancelComputation] = useMutation(CANCEL);
+    const [addExclusion] = useMutation(ADD_EXCLUSION);
+    const [removeExclusion] = useMutation(REMOVE_EXCLUSION);
+    const {data: exclusionsData, refetch: refetchExclusions} = useQuery(GET_EXCLUSIONS, {fetchPolicy: 'network-only'});
+    const exclusions = readExclusions(exclusionsData);
+    const {handleExclude, handleRemoveExclusion} = useExclusionActions({addExclusion, removeExclusion, refetchExclusions, setStatus});
     const [fetchResult] = useLazyQuery(GET_RESULT, {fetchPolicy: 'network-only'});
     const [fetchStatus] = useLazyQuery(GET_STATUS, {fetchPolicy: 'network-only'});
     // While a computation runs, poll its status; the heavy traversal happens server-side off-request.
@@ -639,6 +712,8 @@ export const JcrStatsAdmin = () => {
                 </div>
             </section>
 
+            <ExclusionsPanel t={t} exclusions={exclusions} onRemove={handleRemoveExclusion}/>
+
             {computing && (
                 <RunningProgress
                     t={t}
@@ -694,6 +769,7 @@ export const JcrStatsAdmin = () => {
                             dimensions={dimensions}
                             containerRef={containerRef}
                             onFocusChange={handleFocusChange}
+                            onExclude={handleExclude}
                         />
                     )}
 

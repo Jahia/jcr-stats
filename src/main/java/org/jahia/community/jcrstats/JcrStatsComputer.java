@@ -36,6 +36,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 
 /**
  * Reusable JCR size-computation engine.
@@ -101,7 +102,16 @@ public class JcrStatsComputer {
      * nodes (never mid-JCR-operation, which could leave the session inconsistent).
      */
     public NodeStats computeStats(String path, AtomicLong visited, BooleanSupplier cancelled) throws RepositoryException {
-        return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path, visited, cancelled));
+        return computeStats(path, visited, cancelled, p -> false);
+    }
+
+    /**
+     * As {@link #computeStats(String, AtomicLong, BooleanSupplier)}, but also skips any node for which
+     * {@code excludedPath} returns true (and its whole subtree), so configured exclusions are removed
+     * from the totals. The computed root path itself is never skipped — only its descendants.
+     */
+    public NodeStats computeStats(String path, AtomicLong visited, BooleanSupplier cancelled, Predicate<String> excludedPath) throws RepositoryException {
+        return JCRTemplate.getInstance().doExecuteWithSystemSession((JCRSessionWrapper session) -> computeSize(session, path, visited, cancelled, excludedPath));
     }
 
     /**
@@ -296,12 +306,12 @@ public class JcrStatsComputer {
         return sb.toString();
     }
 
-    private NodeStats computeSize(JCRSessionWrapper session, String currentPath, AtomicLong visited, BooleanSupplier cancelled) throws RepositoryException {
+    private NodeStats computeSize(JCRSessionWrapper session, String currentPath, AtomicLong visited, BooleanSupplier cancelled, Predicate<String> excludedPath) throws RepositoryException {
         // Refresh once at the entry rather than once per node: a read-only traversal does not need to
         // re-sync the session view at every level, and per-node refresh was needless overhead.
         session.refresh(false);
         final JCRNodeWrapper root = session.getNode(currentPath, false);
-        return computeNode(session, root, visited, cancelled);
+        return computeNode(session, root, visited, cancelled, excludedPath);
     }
 
     /**
@@ -315,7 +325,7 @@ public class JcrStatsComputer {
      * <p>Package-private to allow unit-testing the traversal/aggregation logic with mocked nodes,
      * without a live JCR session.</p>
      */
-    NodeStats computeNode(JCRSessionWrapper session, JCRNodeWrapper node, AtomicLong visited, BooleanSupplier cancelled) throws RepositoryException {
+    NodeStats computeNode(JCRSessionWrapper session, JCRNodeWrapper node, AtomicLong visited, BooleanSupplier cancelled, Predicate<String> excludedPath) throws RepositoryException {
         // Cooperative cancellation: checked at the start of every node so an async job stops between
         // nodes (never mid-JCR-operation). Distinct exception so the per-branch handlers re-throw it.
         if (cancelled.getAsBoolean()) {
@@ -352,7 +362,11 @@ public class JcrStatsComputer {
                 break;
             }
             try {
-                currentNodeStats.addSubNodeStats(computeNode(session, child, visited, cancelled));
+                // Configured exclusions remove the node and its whole subtree from the totals.
+                if (excludedPath.test(child.getPath())) {
+                    continue;
+                }
+                currentNodeStats.addSubNodeStats(computeNode(session, child, visited, cancelled, excludedPath));
             } catch (TraversalAbortException e) {
                 throw e; // cancellation or the hard MAX_VISITED_NODES limit — abort the whole traversal
             } catch (RepositoryException | RuntimeException e) {

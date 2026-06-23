@@ -4,6 +4,7 @@ import graphql.annotations.annotationTypes.GraphQLDescription;
 import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import org.jahia.community.jcrstats.JcrStatsComputer;
+import org.jahia.community.jcrstats.JcrStatsConfig;
 import org.jahia.community.jcrstats.JcrStatsService;
 import org.jahia.community.jcrstats.NodeStats;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
@@ -119,6 +120,15 @@ public class JcrStatsQuery {
         }
         final int depth = maxDepth == null ? DEFAULT_MAX_DEPTH : Math.max(0, maxDepth);
         return new GqlNodeStats(tree, depth);
+    }
+
+    @GraphQLField
+    @GraphQLName("exclusions")
+    @GraphQLDescription("The absolute JCR paths currently excluded from computations (each excludes that node and its subtree).")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public List<String> exclusions() {
+        final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
+        return config == null ? Collections.emptyList() : new ArrayList<>(config.getExcludedPaths());
     }
 
     @GraphQLField

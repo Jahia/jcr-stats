@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Path exclusions** — Paths can be excluded from the computation (the path and its whole subtree are skipped). Click a frame in the flamegraph and choose **Exclude this path**; excluded paths are listed with a **Remove** control. Exclusions are persisted as an OSGi configuration file (`${karaf.etc}/org.jahia.community.jcrstats.cfg`, property `jcrStats.excludedPaths`) via a `ManagedService`, so they survive restarts and can also be edited by hand. New GraphQL ops: `jcrStats.exclusions` (query), `jcrStats.addExclusion(path)` / `jcrStats.removeExclusion(path)` (mutations). Exclusions take effect on the next computation.
 - **Server-side cancellation** — New `jcrStats.cancel` mutation and a `cancelled` flag on `jcrStats.status`. The traversal now polls a cooperative cancellation flag at the start of every node, so a running job stops between nodes (never mid-JCR-operation).
 
 ### Fixed

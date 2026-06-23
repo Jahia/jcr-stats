@@ -5,6 +5,7 @@ import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import org.jahia.community.jcrstats.ComputeResult;
 import org.jahia.community.jcrstats.JcrStatsComputer;
+import org.jahia.community.jcrstats.JcrStatsConfig;
 import org.jahia.community.jcrstats.JcrStatsService;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.osgi.BundleUtils;
@@ -38,6 +39,30 @@ public class JcrStatsMutation {
     public Boolean cancel() {
         final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
         return service != null && service.cancel();
+    }
+
+    @GraphQLField
+    @GraphQLName("addExclusion")
+    @GraphQLDescription("Adds an absolute JCR path to the exclusion list: the path and its whole subtree are skipped in future computations. Persisted to the OSGi configuration file. Returns true on success, false if the path is invalid or could not be saved.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean addExclusion(
+            @GraphQLName("path")
+            @GraphQLDescription("Absolute JCR path to exclude (e.g. /sites/mySite/files/cloud-dumps)")
+            String path) {
+        final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
+        return config != null && config.addExclusion(path);
+    }
+
+    @GraphQLField
+    @GraphQLName("removeExclusion")
+    @GraphQLDescription("Removes a path from the exclusion list and persists the change. Returns true on success.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean removeExclusion(
+            @GraphQLName("path")
+            @GraphQLDescription("Absolute JCR path to stop excluding")
+            String path) {
+        final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
+        return config != null && config.removeExclusion(path);
     }
 
     @GraphQLField
