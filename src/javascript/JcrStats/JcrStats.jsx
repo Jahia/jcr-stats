@@ -4,7 +4,7 @@ import {useTranslation} from 'react-i18next';
 import {Button, Loader, Typography, Bar, Download, Upload, Compare} from '@jahia/moonstone';
 import {FlameGraph} from 'react-flame-graph';
 import styles from './JcrStats.scss';
-import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT, GET_EXCLUSIONS, ADD_EXCLUSION, REMOVE_EXCLUSION} from './JcrStats.gql';
+import {COMPUTE, CANCEL, GET_STATUS, GET_RESULT, GET_EXCLUSIONS, ADD_EXCLUSION, REMOVE_EXCLUSION, GET_SNAPSHOTS} from './JcrStats.gql';
 import {
     formatBytes,
     formatDuration,
@@ -127,6 +127,36 @@ const handlePolledStatus = (current, ctx) => {
 // Safely reads the exclusions array out of the GET_EXCLUSIONS response. A module-level helper so the
 // short-circuit chain doesn't add to the main component's cyclomatic complexity.
 const readExclusions = data => (data && data.jcrStats && data.jcrStats.exclusions) || [];
+
+// Likewise for the saved-execution snapshot list.
+const readSnapshots = data => (data && data.jcrStats && data.jcrStats.snapshots) || [];
+
+// Fetches a stored snapshot's JSON by URL and loads it into the viewer via the same validated
+// importer (extractTree) as the file-based Load. Extracted into a hook to keep the main component's
+// complexity bounded and its branches out of the render arrow.
+const useSnapshotLoader = ({setFocused, setTree, setTreePath, setView, setStatus}) => useCallback(async url => {
+    try {
+        const response = await fetch(url, {credentials: 'same-origin'});
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const text = await response.text();
+        if (text.length > MAX_IMPORT_BYTES) {
+            throw new Error('snapshot too large');
+        }
+
+        const {tree: loaded, path: loadedPath} = extractTree(JSON.parse(text));
+        setFocused(null);
+        setTreePath(loadedPath);
+        setTree(loaded);
+        setView(VIEW_FLAMEGRAPH);
+        setStatus(SUCCESS_LOADED);
+    } catch (err) {
+        console.error('[jcr-stats] failed to load snapshot', err);
+        setStatus(ERROR_LOAD);
+    }
+}, [setFocused, setTree, setTreePath, setView, setStatus]);
 
 // Exclusion add/remove actions, extracted into a hook so their try/catch branching does not inflate
 // the main component's cyclomatic complexity. Each persists server-side and refreshes the list.
@@ -301,6 +331,29 @@ const ExclusionsPanel = ({t, exclusions, onRemove}) => {
     );
 };
 
+// Lists saved execution snapshots (most recent first) with a per-row View control that reloads the
+// stored JSON into the viewer. Hidden when there are none.
+const SnapshotsPanel = ({t, snapshots, onView}) => {
+    if (!snapshots.length) {
+        return null;
+    }
+
+    return (
+        <section className={styles.js_exclusions} aria-label={t('label.savedExecutions')}>
+            <Typography className={styles.js_label}>{t('label.savedExecutions')}</Typography>
+            <Typography className={styles.js_hint}>{t('label.snapshotsHint')}</Typography>
+            <ul className={styles.js_exclusions_list}>
+                {snapshots.map(snapshot => (
+                    <li key={snapshot.path} className={styles.js_exclusions_item}>
+                        <span className={styles.js_exclusions_path}>{snapshot.name}</span>
+                        <Button size="default" label={t('label.viewSnapshot')} onClick={() => onView(snapshot.url)}/>
+                    </li>
+                ))}
+            </ul>
+        </section>
+    );
+};
+
 export const JcrStatsAdmin = () => {
     const {t} = useTranslation('jcr-stats');
     const [path, setPath] = useState(DEFAULT_PATH);
@@ -342,6 +395,15 @@ export const JcrStatsAdmin = () => {
     const {data: exclusionsData, refetch: refetchExclusions} = useQuery(GET_EXCLUSIONS, {fetchPolicy: 'network-only'});
     const exclusions = readExclusions(exclusionsData);
     const {handleExclude, handleRemoveExclusion} = useExclusionActions({addExclusion, removeExclusion, refetchExclusions, setStatus});
+    const {data: snapshotsData, refetch: refetchSnapshots} = useQuery(GET_SNAPSHOTS, {fetchPolicy: 'network-only'});
+    const snapshots = readSnapshots(snapshotsData);
+    const handleViewSnapshot = useSnapshotLoader({setFocused, setTree, setTreePath, setView, setStatus});
+    // Refresh the saved-execution list whenever a run finishes (a snapshot is auto-saved on completion).
+    useEffect(() => {
+        if (!computing) {
+            refetchSnapshots();
+        }
+    }, [computing, refetchSnapshots]);
     const [fetchResult] = useLazyQuery(GET_RESULT, {fetchPolicy: 'network-only'});
     const [fetchStatus] = useLazyQuery(GET_STATUS, {fetchPolicy: 'network-only'});
     // While a computation runs, poll its status; the heavy traversal happens server-side off-request.
@@ -713,6 +775,8 @@ export const JcrStatsAdmin = () => {
             </section>
 
             <ExclusionsPanel t={t} exclusions={exclusions} onRemove={handleRemoveExclusion}/>
+
+            <SnapshotsPanel t={t} snapshots={snapshots} onView={handleViewSnapshot}/>
 
             {computing && (
                 <RunningProgress

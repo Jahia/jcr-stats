@@ -144,9 +144,11 @@ public class JcrStatsQuery {
                 }
                 // sqlEncode the path for consistency/defense-in-depth (it is a constant today, so
                 // behaviour is unchanged — this guards against future changes making it dynamic).
+                // Exclude the snapshots subfolder: HTML reports and JSON execution snapshots are listed
+                // by separate queries (reports() vs snapshots()).
                 final String stmt = String.format(
-                        "SELECT * FROM [jnt:file] AS report WHERE ISDESCENDANTNODE(report, '%s')",
-                        JCRContentUtils.sqlEncode(REPORTS_BASE_PATH));
+                        "SELECT * FROM [jnt:file] AS report WHERE ISDESCENDANTNODE(report, '%s') AND NOT ISDESCENDANTNODE(report, '%s')",
+                        JCRContentUtils.sqlEncode(REPORTS_BASE_PATH), JCRContentUtils.sqlEncode(JcrStatsComputer.SNAPSHOTS_PATH));
                 final QueryWrapper query = session.getWorkspace().getQueryManager().createQuery(stmt, Query.JCR_SQL2);
                 final JCRNodeIteratorWrapper nodes = query.execute().getNodes();
                 while (nodes.hasNext()) {
@@ -157,6 +159,34 @@ public class JcrStatsQuery {
             });
         } catch (RepositoryException e) {
             LOGGER.error("Failed to list jcr-stats reports", e);
+            return Collections.emptyList();
+        }
+    }
+
+    @GraphQLField
+    @GraphQLName("snapshots")
+    @GraphQLDescription("Lists the auto-saved JSON execution snapshots (most recent first). Each has a url whose JSON content can be loaded back into the viewer.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public List<GqlJcrStatsReport> snapshots() {
+        try {
+            return JCRTemplate.getInstance().doExecuteWithSystemSession(session -> {
+                final List<GqlJcrStatsReport> snapshots = new ArrayList<>();
+                if (!session.nodeExists(JcrStatsComputer.SNAPSHOTS_PATH)) {
+                    return snapshots;
+                }
+                final String stmt = String.format(
+                        "SELECT * FROM [jnt:file] AS snapshot WHERE ISDESCENDANTNODE(snapshot, '%s') ORDER BY [jcr:created] DESC",
+                        JCRContentUtils.sqlEncode(JcrStatsComputer.SNAPSHOTS_PATH));
+                final QueryWrapper query = session.getWorkspace().getQueryManager().createQuery(stmt, Query.JCR_SQL2);
+                final JCRNodeIteratorWrapper nodes = query.execute().getNodes();
+                while (nodes.hasNext()) {
+                    final JCRNodeWrapper node = (JCRNodeWrapper) nodes.next();
+                    snapshots.add(new GqlJcrStatsReport(node.getPath(), node.getName(), JcrStatsComputer.flamegraphUrl(node.getPath())));
+                }
+                return snapshots;
+            });
+        } catch (RepositoryException e) {
+            LOGGER.error("Failed to list jcr-stats execution snapshots", e);
             return Collections.emptyList();
         }
     }

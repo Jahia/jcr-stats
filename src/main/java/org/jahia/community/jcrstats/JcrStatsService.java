@@ -76,11 +76,14 @@ public class JcrStatsService {
         final Predicate<String> excludedPath = config == null ? p -> false : config::isExcluded;
         executor.submit(() -> {
             LOGGER.info("JCR stats computation started for path {}", effectivePath);
+            final JcrStatsComputer computer = new JcrStatsComputer();
             try {
-                final NodeStats tree = new JcrStatsComputer().computeStats(effectivePath, visited, cancelRequested::get, excludedPath);
+                final NodeStats tree = computer.computeStats(effectivePath, visited, cancelRequested::get, excludedPath);
                 lastResult.set(tree);
                 lastPath = effectivePath;
                 computedAt = System.currentTimeMillis();
+                // Auto-save the finished tree as a JSON snapshot so it can be reloaded later (history).
+                computer.writeJsonSnapshot(tree, effectivePath);
             } catch (RepositoryException | RuntimeException e) {
                 if (cancelRequested.get()) {
                     // Expected stop, not a failure: the traversal threw because cancellation was requested.

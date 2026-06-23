@@ -20,6 +20,7 @@ import javax.jcr.RepositoryException;
 import javax.jcr.query.Query;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -79,6 +80,15 @@ public class JcrStatsComputer {
      */
     private static final boolean USE_QUERY_TRAVERSAL =
             "query".equalsIgnoreCase(System.getProperty("jcrStats.traversal", "direct"));
+
+    /** JCR folder holding the auto-saved JSON execution snapshots (one timestamped file per run). */
+    public static final String SNAPSHOTS_PATH = "/sites/systemsite/files/jcr-stats/snapshots";
+    // The export envelope's format tag — MUST match the SAVE_FORMAT the UI's importer accepts.
+    private static final String SNAPSHOT_FORMAT = "jcr-stats-flamegraph";
+    // Snapshot tree depth — keep in sync with the MAX_DEPTH coupling documented in CHANGELOG Notes.
+    private static final int SNAPSHOT_MAX_DEPTH = 6;
+    private static final DateTimeFormatter SNAPSHOT_NAME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss");
 
     /**
      * Computes the size statistics of the subtree rooted at {@code path} without writing anything.
@@ -297,6 +307,88 @@ public class JcrStatsComputer {
                         sb.append("\\u2028");
                     } else if (c == '\u2029') {
                         sb.append("\\u2029");
+                    } else {
+                        sb.append(c);
+                    }
+                    break;
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Serializes the (depth-limited) tree to JSON and stores it as a timestamped {@code jnt:file}
+     * under {@link #SNAPSHOTS_PATH}, so a past execution can be reloaded into the viewer later. The
+     * envelope matches the UI's Save/Load format, so {@code jcrStats.snapshot} content loads through
+     * the same importer. Returns the stored JCR path, or {@code null} on failure (logged, never thrown
+     * — snapshotting must not fail the computation).
+     */
+    public String writeJsonSnapshot(NodeStats tree, String computedPath) {
+        final String json = buildSnapshotJson(tree, computedPath);
+        final String fileName = "jcr-stats-" + SNAPSHOT_NAME_FORMATTER.format(LocalDateTime.now()) + ".json";
+        try (InputStream in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))) {
+            final JCRNodeWrapper folder = mkdirs(SNAPSHOTS_PATH);
+            folder.uploadFile(fileName, in, MediaType.APPLICATION_JSON_VALUE);
+            folder.saveSession();
+            final String storedPath = folder.getPath() + FileSystem.SEPARATOR + fileName;
+            LOGGER.info("Saved JSON execution snapshot to {}", storedPath);
+            return storedPath;
+        } catch (IOException | RepositoryException e) {
+            LOGGER.error("Failed to write JSON execution snapshot for path {}", computedPath, e);
+            return null;
+        }
+    }
+
+    /** Builds the export-envelope JSON ({@code {format,version,path,maxDepth,exportedAt,tree}}). */
+    static String buildSnapshotJson(NodeStats tree, String computedPath) {
+        final StringBuilder sb = new StringBuilder(1024);
+        sb.append("{\"format\":\"").append(SNAPSHOT_FORMAT)
+                .append("\",\"version\":1,\"path\":\"").append(jsonEscape(computedPath))
+                .append("\",\"maxDepth\":").append(SNAPSHOT_MAX_DEPTH)
+                .append(",\"exportedAt\":\"").append(LocalDateTime.now()).append("\",\"tree\":");
+        appendNodeJson(tree, sb, SNAPSHOT_MAX_DEPTH);
+        sb.append('}');
+        return sb.toString();
+    }
+
+    private static void appendNodeJson(NodeStats node, StringBuilder sb, int remainingDepth) {
+        sb.append("{\"name\":\"").append(jsonEscape(node.getName()))
+                .append("\",\"path\":\"").append(jsonEscape(node.getPath()))
+                .append("\",\"size\":").append(node.getSize())
+                .append(",\"nodeCount\":").append(node.getNodeCount())
+                .append(",\"children\":[");
+        if (remainingDepth > 0) {
+            boolean first = true;
+            for (NodeStats child : node.getSubNodeStats()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                appendNodeJson(child, sb, remainingDepth - 1);
+                first = false;
+            }
+        }
+        sb.append("]}");
+    }
+
+    /** Escapes a string for embedding in a JSON double-quoted value (RFC 8259). */
+    static String jsonEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        final StringBuilder sb = new StringBuilder(value.length() + 8);
+        for (int i = 0; i < value.length(); i++) {
+            final char c = value.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                case '\b': sb.append("\\b"); break;
+                case '\f': sb.append("\\f"); break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
                     } else {
                         sb.append(c);
                     }

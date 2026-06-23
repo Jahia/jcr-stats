@@ -57,6 +57,18 @@ export const REMOVE_EXCLUSION = gql`
     }
 `;
 
+export const GET_SNAPSHOTS = gql`
+    query JcrStatsSnapshots {
+        jcrStats {
+            snapshots {
+                path
+                name
+                url
+            }
+        }
+    }
+`;
+
 export const GET_RESULT = gql`
     query JcrStatsResult($maxDepth: Int) {
         jcrStats {

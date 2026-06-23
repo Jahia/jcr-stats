@@ -118,6 +118,36 @@ public class JcrStatsComputerTest {
         assertThat(JcrStatsComputer.countNodes(root)).isEqualTo(4L);
     }
 
+    // --- JSON snapshot serialization ---
+
+    @Test
+    public void jsonEscape_escapesQuotesBackslashAndControlChars() {
+        assertThat(JcrStatsComputer.jsonEscape("a\"b\\c")).isEqualTo("a\\\"b\\\\c");
+        assertThat(JcrStatsComputer.jsonEscape("line\nbreak\ttab")).isEqualTo("line\\nbreak\\ttab");
+        assertThat(JcrStatsComputer.jsonEscape(null)).isEmpty();
+    }
+
+    @Test
+    public void buildSnapshotJson_producesLoadableEnvelopeWithTree() {
+        NodeStats root = new NodeStats("/");
+        NodeStats child = new NodeStats("/alpha");
+        child.setSize(300L);
+        root.addSubNodeStats(child);
+
+        String json = JcrStatsComputer.buildSnapshotJson(root, "/");
+
+        // Envelope matches the UI importer's expected shape (format + tree with name/size/nodeCount).
+        assertThat(json)
+                .contains("\"format\":\"jcr-stats-flamegraph\"")
+                .contains("\"version\":1")
+                .contains("\"path\":\"/\"")
+                .contains("\"maxDepth\":6")
+                .contains("\"name\":\"ROOT\"")
+                .contains("\"name\":\"alpha\"")
+                .contains("\"size\":300")
+                .contains("\"nodeCount\":2");
+    }
+
     // --- flamegraphUrl ---
 
     @Test
