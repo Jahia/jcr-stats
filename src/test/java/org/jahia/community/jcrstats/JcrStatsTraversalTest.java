@@ -80,6 +80,36 @@ public class JcrStatsTraversalTest {
         assertThat(stats.getSize()).isZero();
     }
 
+    @Test
+    public void computeNode_childEnumerationFails_skipsSubtreeInsteadOfAborting() throws Exception {
+        // Mirrors the production crash: getNodes() on an external-provider mount throws because a
+        // child name (e.g. an ISO-8601 timestamp with ':') is not a valid JCR path.
+        JCRNodeWrapper node = mock(JCRNodeWrapper.class);
+        when(node.getPath()).thenReturn("/sites/systemsite/files/cloud-dumps/modulesdump");
+        when(node.getNodes()).thenThrow(new RepositoryException("Invalid path: ':' not valid name character"));
+
+        NodeStats stats = computer.computeNode(null, node, new AtomicLong());
+
+        // No exception propagates; the node itself is still counted, just with no children.
+        assertThat(stats.getNodeCount()).isEqualTo(1L);
+        assertThat(stats.getSubNodeStats()).isEmpty();
+    }
+
+    @Test
+    public void computeNode_oneFailingChild_othersStillAggregated() throws Exception {
+        JCRNodeWrapper good1 = mockNode("/r/a", 100L);
+        JCRNodeWrapper bad = mock(JCRNodeWrapper.class);
+        when(bad.getPath()).thenThrow(new RepositoryException("boom"));
+        JCRNodeWrapper good2 = mockNode("/r/b", 200L);
+        JCRNodeWrapper root = mockNode("/r", NO_DATA, good1, bad, good2);
+
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong());
+
+        // The failing child is skipped; root + the two good children are counted and their sizes summed.
+        assertThat(stats.getNodeCount()).isEqualTo(3L);
+        assertThat(stats.getSize()).isEqualTo(300L);
+    }
+
     // --- helpers ---
 
     /**

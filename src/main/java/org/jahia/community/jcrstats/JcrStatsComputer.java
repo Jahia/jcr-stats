@@ -310,7 +310,7 @@ public class JcrStatsComputer {
         // service records this as lastError; the synchronous GraphQL path catches it and returns a
         // sentinel (-1 / null). Generous ceiling, so legitimate traversals never hit it.
         if (visited.incrementAndGet() >= MAX_VISITED_NODES) {
-            throw new RepositoryException("JCR stats traversal aborted: exceeded the maximum of "
+            throw new TraversalLimitException("JCR stats traversal aborted: exceeded the maximum of "
                     + MAX_VISITED_NODES + " visited nodes (path too broad).");
         }
         final NodeStats currentNodeStats = new NodeStats(node.getPath());
@@ -318,15 +318,47 @@ public class JcrStatsComputer {
             currentNodeStats.setSize(node.getProperty(JcrConstants.JCR_DATA).getLength());
         }
 
-        final JCRNodeIteratorWrapper children = USE_QUERY_TRAVERSAL
-                ? queryChildren(session, node.getPath())
-                : node.getNodes();
-        while (children.hasNext()) {
-            final JCRNodeWrapper child = (JCRNodeWrapper) children.next();
-            currentNodeStats.addSubNodeStats(computeNode(session, child, visited));
+        // Best-effort enumeration: a whole-site walk descends into external data-source mounts whose
+        // child names may not be valid JCR paths (e.g. cloud-dumps nodes named with an ISO-8601
+        // timestamp, where the ':' is the namespace-prefix separator). Listing such children throws;
+        // skip that subtree with a warning instead of aborting the entire computation. The hard
+        // MAX_VISITED_NODES limit is the one exception that must still propagate.
+        try {
+            final JCRNodeIteratorWrapper children = USE_QUERY_TRAVERSAL
+                    ? queryChildren(session, node.getPath())
+                    : node.getNodes();
+            while (children.hasNext()) {
+                final JCRNodeWrapper child = (JCRNodeWrapper) children.next();
+                try {
+                    currentNodeStats.addSubNodeStats(computeNode(session, child, visited));
+                } catch (TraversalLimitException e) {
+                    throw e;
+                } catch (RepositoryException | RuntimeException e) {
+                    LOGGER.warn("Skipping a child of {} — could not compute its size: {}",
+                            currentNodeStats.getPath(), e.toString());
+                }
+            }
+        } catch (TraversalLimitException e) {
+            throw e;
+        } catch (RepositoryException | RuntimeException e) {
+            LOGGER.warn("Skipping children of {} — cannot enumerate them (likely an invalid node name "
+                    + "from an external provider): {}", currentNodeStats.getPath(), e.toString());
         }
 
         return currentNodeStats;
+    }
+
+    /**
+     * Signals that {@link #MAX_VISITED_NODES} was reached. A distinct type so the best-effort error
+     * handlers in {@link #computeNode} re-throw it (aborting the whole traversal) rather than treating
+     * it as a skippable bad branch.
+     */
+    private static final class TraversalLimitException extends RepositoryException {
+        private static final long serialVersionUID = 1L;
+
+        TraversalLimitException(String message) {
+            super(message);
+        }
     }
 
     /** Legacy strategy: returns the direct children of {@code path} via an {@code ISCHILDNODE} query. */
