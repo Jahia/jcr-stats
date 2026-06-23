@@ -81,16 +81,17 @@ public class JcrStatsTraversalTest {
     }
 
     @Test
-    public void computeNode_childEnumerationFails_skipsSubtreeInsteadOfAborting() throws Exception {
-        // Mirrors the production crash: getNodes() on an external-provider mount throws because a
-        // child name (e.g. an ISO-8601 timestamp with ':') is not a valid JCR path.
+    public void computeNode_childListingUnrecoverable_skipsSubtreeInsteadOfAborting() throws Exception {
+        // Mirrors the production crash: getNodes() on an external-provider mount throws because a child
+        // name (e.g. an ISO-8601 timestamp with ':') is not a valid JCR path. With a null session the
+        // escaped-query fallback also fails, so the branch is skipped — but no exception propagates.
         JCRNodeWrapper node = mock(JCRNodeWrapper.class);
         when(node.getPath()).thenReturn("/sites/systemsite/files/cloud-dumps/modulesdump");
         when(node.getNodes()).thenThrow(new RepositoryException("Invalid path: ':' not valid name character"));
 
         NodeStats stats = computer.computeNode(null, node, new AtomicLong());
 
-        // No exception propagates; the node itself is still counted, just with no children.
+        // The node itself is still counted, just with no children, and the whole job survives.
         assertThat(stats.getNodeCount()).isEqualTo(1L);
         assertThat(stats.getSubNodeStats()).isEmpty();
     }

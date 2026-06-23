@@ -318,34 +318,65 @@ public class JcrStatsComputer {
             currentNodeStats.setSize(node.getProperty(JcrConstants.JCR_DATA).getLength());
         }
 
-        // Best-effort enumeration: a whole-site walk descends into external data-source mounts whose
-        // child names may not be valid JCR paths (e.g. cloud-dumps nodes named with an ISO-8601
-        // timestamp, where the ':' is the namespace-prefix separator). Listing such children throws;
-        // skip that subtree with a warning instead of aborting the entire computation. The hard
-        // MAX_VISITED_NODES limit is the one exception that must still propagate.
-        try {
-            final JCRNodeIteratorWrapper children = USE_QUERY_TRAVERSAL
-                    ? queryChildren(session, node.getPath())
-                    : node.getNodes();
-            while (children.hasNext()) {
-                final JCRNodeWrapper child = (JCRNodeWrapper) children.next();
-                try {
-                    currentNodeStats.addSubNodeStats(computeNode(session, child, visited));
-                } catch (TraversalLimitException e) {
-                    throw e;
-                } catch (RepositoryException | RuntimeException e) {
-                    LOGGER.warn("Skipping a child of {} — could not compute its size: {}",
-                            currentNodeStats.getPath(), e.toString());
+        final JCRNodeIteratorWrapper children = listChildren(session, node, currentNodeStats.getPath());
+        if (children == null) {
+            return currentNodeStats; // children could not be enumerated; already logged
+        }
+        while (true) {
+            final JCRNodeWrapper child;
+            try {
+                if (!children.hasNext()) {
+                    break;
                 }
+                child = (JCRNodeWrapper) children.next();
+            } catch (RuntimeException e) {
+                // hasNext()/next() come from java.util.Iterator and throw only unchecked exceptions
+                // (Jahia wraps repository errors as runtime). Stop listing this node's children.
+                LOGGER.warn("Stopped listing children of {} after an iteration error: {}",
+                        currentNodeStats.getPath(), e.toString());
+                break;
             }
-        } catch (TraversalLimitException e) {
-            throw e;
-        } catch (RepositoryException | RuntimeException e) {
-            LOGGER.warn("Skipping children of {} — cannot enumerate them (likely an invalid node name "
-                    + "from an external provider): {}", currentNodeStats.getPath(), e.toString());
+            try {
+                currentNodeStats.addSubNodeStats(computeNode(session, child, visited));
+            } catch (TraversalLimitException e) {
+                throw e; // hard MAX_VISITED_NODES limit — abort the whole traversal
+            } catch (RepositoryException | RuntimeException e) {
+                LOGGER.warn("Skipping a child of {} — could not compute its size: {}",
+                        currentNodeStats.getPath(), e.toString());
+            }
         }
 
         return currentNodeStats;
+    }
+
+    /**
+     * Lists the children of {@code node}, or returns {@code null} if they cannot be enumerated at all.
+     *
+     * <p>The default strategy is direct {@link JCRNodeWrapper#getNodes()}. That call builds every child
+     * eagerly, so a single child whose name is not a valid JCR path — e.g. an external data-source node
+     * named with an ISO-8601 timestamp, where {@code ':'} is the namespace-prefix separator — aborts the
+     * whole listing with {@code MalformedPathException}. When that happens we fall back to an
+     * {@code ISCHILDNODE} query whose path argument is escaped via {@link JCRContentUtils#sqlEncode}: the
+     * index returns the valid children one by one (the un-representable node is simply absent), so the
+     * rest of the branch is recovered instead of dropped. Only if the escaped query also fails do we give
+     * up on this node's children (logged, returns {@code null}).</p>
+     */
+    private JCRNodeIteratorWrapper listChildren(JCRSessionWrapper session, JCRNodeWrapper node, String path) {
+        if (!USE_QUERY_TRAVERSAL) {
+            try {
+                return node.getNodes();
+            } catch (RepositoryException | RuntimeException e) {
+                LOGGER.warn("Direct child listing of {} failed ({}); retrying via escaped ISCHILDNODE query",
+                        path, e.toString());
+            }
+        }
+        try {
+            return queryChildren(session, path);
+        } catch (RepositoryException | RuntimeException e) {
+            LOGGER.warn("Skipping children of {} — could not enumerate them (likely an invalid node name "
+                    + "from an external provider): {}", path, e.toString());
+            return null;
+        }
     }
 
     /**

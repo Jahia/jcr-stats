@@ -5,16 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.1] — Unreleased
+## [2.1.2] — Unreleased
+
+### Fixed
+
+- **Whole-site traversal no longer aborts on un-listable branches** — Walking a subtree that descends into an external data-source mount whose child names are not valid JCR paths (e.g. `cloud-dumps` nodes named with an ISO-8601 timestamp, where `:` is the namespace-prefix separator) raised `RepositoryException: Invalid path … ':' not valid name character` from the eager `getNodes()` listing and aborted the entire computation. When direct listing fails, the traversal now falls back to an `ISCHILDNODE` query whose path is escaped via `JCRContentUtils.sqlEncode`, recovering the valid children of that node instead of dropping the whole branch (the single un-representable node — which cannot be a JCR node at all — is simply omitted). A `WARN` is logged; only if the escaped query also fails is the node's subtree skipped. The hard `MAX_VISITED_NODES` safety limit still aborts as before.
+
+### Tests
+
+- Added regression tests to `JcrStatsTraversalTest`: a node whose children cannot be listed at all is skipped (no exception propagates), and a single failing child no longer drops its siblings.
+
+---
+
+## [2.1.1] — 2026-06-23
 
 ### Changed
 
 - **Tree Traversal Strategy** — The size computation now walks the JCR hierarchy directly via `JCRNodeWrapper.getNodes()` instead of firing one `ISCHILDNODE` JCR-SQL2 query per node. This removes a per-node query parse/plan/index lookup plus a redundant path resolution, making large-subtree computations substantially faster, and reads committed hierarchy state instead of possibly-lagging Lucene index state. The legacy query-based strategy remains available for A/B benchmarking via the `-DjcrStats.traversal=query` system property (default: `direct`).
 - **Session Refresh** — `session.refresh(false)` now runs once at the start of a traversal instead of once per node (the per-node refresh was needless overhead on a read-only walk).
-
-### Fixed
-
-- **Whole-site traversal no longer aborts on un-listable branches** — Walking a subtree that descends into an external data-source mount whose child names are not valid JCR paths (e.g. `cloud-dumps` nodes named with an ISO-8601 timestamp, where `:` is the namespace-prefix separator) raised `RepositoryException: Invalid path … ':' not valid name character` and aborted the entire computation. The traversal is now best-effort: it logs a `WARN` and skips an un-enumerable node (or a single failing child) instead of failing the whole job. The hard `MAX_VISITED_NODES` safety limit still aborts as before.
 
 ### Tests
 
