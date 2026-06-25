@@ -870,7 +870,7 @@ export const JcrStatsAdmin = () => {
     const isInfo = INFO_STATUSES.includes(status);
 
     return (
-        <div className={styles.js_container}>
+        <div className={styles.js_container} data-testid="jcrstats-container">
             {/*
               M-3/M-4: Single polite status region for success / info announcements.
               The visible error banner below carries role="alert" so it serves as the
@@ -972,6 +972,20 @@ export const JcrStatsAdmin = () => {
                 </div>
             )}
 
+            {/* Saved executions sits ABOVE the results (View) section so the run history is the
+                first thing reached after the controls. Returns null when empty, so it adds no
+                vertical space until a run has been saved. */}
+            <SnapshotsPanel
+                t={t}
+                snapshots={snapshots}
+                confirmingDeletePath={confirmingDeletePath}
+                onView={handleViewSnapshot}
+                onCompare={compareSnapshot}
+                onRequestDelete={requestDeleteSnapshot}
+                onConfirmDelete={confirmDeleteSnapshot}
+                onCancelDelete={cancelDeleteSnapshot}
+            />
+
             {tree && (
                 /*
                   M-5: Results wrapped in a <section> with aria-label.
@@ -1016,20 +1030,9 @@ export const JcrStatsAdmin = () => {
                 </section>
             )}
 
-            {/* Rendered BELOW the results so they never consume vertical space above the flamegraph
-                (which, in a short viewport, would push it past the bottom). */}
+            {/* Exclusions stays BELOW the results so it never consumes vertical space above the
+                flamegraph (which, in a short viewport, would push it past the bottom). */}
             <ExclusionsPanel t={t} exclusions={exclusions} onRemove={handleRemoveExclusion}/>
-
-            <SnapshotsPanel
-                t={t}
-                snapshots={snapshots}
-                confirmingDeletePath={confirmingDeletePath}
-                onView={handleViewSnapshot}
-                onCompare={compareSnapshot}
-                onRequestDelete={requestDeleteSnapshot}
-                onConfirmDelete={confirmDeleteSnapshot}
-                onCancelDelete={cancelDeleteSnapshot}
-            />
         </div>
     );
 };

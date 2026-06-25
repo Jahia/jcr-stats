@@ -18,6 +18,13 @@
   width: 100%;
   box-sizing: border-box;
   padding: var(--spacing-large, 24px);
+  /* The Jahia admin (moonstone) settings frame is a fixed-height, overflow:hidden
+     region — each route must own its own scrolling. Without this, once the results +
+     flamegraph + Saved-executions/Exclusions panels stack taller than the frame the
+     bottom is clipped and no vertical scrollbar appears. Fill the frame and scroll
+     internally; border-box keeps the 24px padding inside the scroll box. */
+  height: 100%;
+  overflow-y: auto;
 }
 
 .js_header h2 {
