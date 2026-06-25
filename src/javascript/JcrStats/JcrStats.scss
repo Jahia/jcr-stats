@@ -374,6 +374,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-small, 8px);
+  /* Cap the panel height so a long history (snapshots are kept up to the retention cap) scrolls
+     internally instead of growing the page and pushing the results/flamegraph past the viewport. */
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .js_exclusions_item {

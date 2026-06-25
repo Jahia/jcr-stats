@@ -22,6 +22,7 @@ import javax.jcr.RepositoryException;
 import javax.jcr.query.Query;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 @GraphQLName("JcrStatsQuery")
@@ -177,16 +178,19 @@ public class JcrStatsQuery {
                 if (!session.nodeExists(JcrStatsComputer.SNAPSHOTS_PATH)) {
                     return snapshots;
                 }
-                final String stmt = String.format(
-                        "SELECT * FROM [jnt:file] AS snapshot WHERE ISDESCENDANTNODE(snapshot, '%s') ORDER BY [jcr:created] DESC",
-                        JCRContentUtils.sqlEncode(JcrStatsComputer.SNAPSHOTS_PATH));
-                final QueryWrapper query = session.getWorkspace().getQueryManager().createQuery(stmt, Query.JCR_SQL2);
-                final JCRNodeIteratorWrapper nodes = query.execute().getNodes();
+                // List the folder's children directly rather than via an ISDESCENDANTNODE query: the
+                // Lucene query index lags behind a node removal, so a just-deleted snapshot would keep
+                // appearing for a few seconds. Direct child iteration reflects deletes immediately.
+                final JCRNodeIteratorWrapper nodes = session.getNode(JcrStatsComputer.SNAPSHOTS_PATH).getNodes();
                 while (nodes.hasNext()) {
                     final JCRNodeWrapper node = (JCRNodeWrapper) nodes.next();
-                    snapshots.add(new GqlJcrStatsReport(node.getPath(), node.getName(),
-                            JcrStatsComputer.flamegraphUrl(node.getPath()), createdAtMillis(node), fileSize(node)));
+                    if (node.isNodeType("jnt:file")) {
+                        snapshots.add(new GqlJcrStatsReport(node.getPath(), node.getName(),
+                                JcrStatsComputer.flamegraphUrl(node.getPath()), createdAtMillis(node), fileSize(node)));
+                    }
                 }
+                // Most-recent first (the index query previously did ORDER BY jcr:created DESC).
+                snapshots.sort(Comparator.comparingLong(GqlJcrStatsReport::getCreatedAt).reversed());
                 return snapshots;
             });
         } catch (RepositoryException e) {
