@@ -586,10 +586,7 @@ export const JcrStatsAdmin = () => {
         measure();
         window.addEventListener('resize', measure);
         return () => window.removeEventListener('resize', measure);
-        // Re-measure when the Exclusions/Saved-executions panels appear or change size: they render
-        // above the results, so their (async) arrival shifts the flamegraph's top — without this the
-        // graph keeps its earlier height and can overflow past the viewport bottom.
-    }, [flameData, measure, view, snapshots.length, exclusions.length]);
+    }, [flameData, measure, view]);
 
     // When the polled status reports the async computation is done, fetch + render the cached result.
     useEffect(() => {
@@ -954,19 +951,6 @@ export const JcrStatsAdmin = () => {
                 </div>
             </section>
 
-            <ExclusionsPanel t={t} exclusions={exclusions} onRemove={handleRemoveExclusion}/>
-
-            <SnapshotsPanel
-                t={t}
-                snapshots={snapshots}
-                confirmingDeletePath={confirmingDeletePath}
-                onView={handleViewSnapshot}
-                onCompare={compareSnapshot}
-                onRequestDelete={requestDeleteSnapshot}
-                onConfirmDelete={confirmDeleteSnapshot}
-                onCancelDelete={cancelDeleteSnapshot}
-            />
-
             {computing && (
                 <RunningProgress
                     t={t}
@@ -1031,6 +1015,21 @@ export const JcrStatsAdmin = () => {
                     {view === VIEW_DIFF && baseline && <DiffTable baseline={baseline} current={tree}/>}
                 </section>
             )}
+
+            {/* Rendered BELOW the results so they never consume vertical space above the flamegraph
+                (which, in a short viewport, would push it past the bottom). */}
+            <ExclusionsPanel t={t} exclusions={exclusions} onRemove={handleRemoveExclusion}/>
+
+            <SnapshotsPanel
+                t={t}
+                snapshots={snapshots}
+                confirmingDeletePath={confirmingDeletePath}
+                onView={handleViewSnapshot}
+                onCompare={compareSnapshot}
+                onRequestDelete={requestDeleteSnapshot}
+                onConfirmDelete={confirmDeleteSnapshot}
+                onCancelDelete={cancelDeleteSnapshot}
+            />
         </div>
     );
 };

@@ -225,6 +225,10 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('[data-testid="jcrstats-load-input"]').selectFile('cypress/fixtures/sample-flamegraph.json', {
             force: true,
         })
+        // The loaded file is auto-saved server-side; wait for that to finish (the success banner says
+        // "saved to history") before counting rows, otherwise the async save can tick the count up
+        // right after we capture rowsBefore, defeating the post-delete "count decreased" assertion.
+        cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'saved to history')
         cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
         cy.get('[data-testid="jcrstats-snapshots"] li')
             .its('length')
