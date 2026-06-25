@@ -1,4 +1,4 @@
-import {DocumentNode} from 'graphql'
+import { DocumentNode } from 'graphql'
 
 describe('JCR Stats - Admin UI', () => {
     const adminPath = '/jahia/administration/jcrStats'
@@ -14,9 +14,14 @@ describe('JCR Stats - Admin UI', () => {
     beforeEach(() => {
         cy.login()
         cy.waitUntil(
-            () => cy.apollo({query: getStatus, fetchPolicy: 'no-cache'})
-                .then((r: {data: {jcrStats: {status: {running: boolean}}}}) => r.data.jcrStats.status.running === false),
-            {timeout: 60000, interval: 2000}
+            () =>
+                cy
+                    .apollo({ query: getStatus, fetchPolicy: 'no-cache' })
+                    .then(
+                        (r: { data: { jcrStats: { status: { running: boolean } } } }) =>
+                            r.data.jcrStats.status.running === false,
+                    ),
+            { timeout: 60000, interval: 2000 },
         )
     })
 
@@ -206,7 +211,9 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
         // With a current tree present, Compare is enabled — clicking it switches to the diff view.
         // (Diff content is data-dependent on shared server snapshots, so assert the view, not a row.)
-        cy.get('[data-testid="jcrstats-snapshots"]').contains('button', 'Compare').first()
+        cy.get('[data-testid="jcrstats-snapshots"]')
+            .contains('button', 'Compare')
+            .first()
             .should('not.be.disabled')
             .click()
         cy.get('[data-testid="jcrstats-diff"]', { timeout: 10000 }).should('be.visible')
@@ -219,20 +226,22 @@ describe('JCR Stats - Admin UI', () => {
             force: true,
         })
         cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
-        cy.get('[data-testid="jcrstats-snapshots"] li').its('length').then((rowsBefore) => {
-            // Delete uses an accessible inline two-step confirm (no native window.confirm):
-            // the first click arms the row, then the inline "Confirm delete" button performs it.
-            cy.get('[data-testid="jcrstats-snapshots"]').contains('button', 'Delete').first().click()
-            cy.get('[data-testid="jcrstats-snapshot-confirm-delete"]', { timeout: 10000 }).first().click()
-            // A success status banner confirms the deletion to sighted users (A-12).
-            cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'deleted')
-            // The list shrinks (or the panel disappears when it was the last one).
-            cy.get('body').then(($body) => {
-                const panel = $body.find('[data-testid="jcrstats-snapshots"]')
-                const rowsAfter = panel.length ? panel.find('li').length : 0
-                expect(rowsAfter).to.be.lessThan(rowsBefore)
+        cy.get('[data-testid="jcrstats-snapshots"] li')
+            .its('length')
+            .then((rowsBefore) => {
+                // Delete uses an accessible inline two-step confirm (no native window.confirm):
+                // the first click arms the row, then the inline "Confirm delete" button performs it.
+                cy.get('[data-testid="jcrstats-snapshots"]').contains('button', 'Delete').first().click()
+                cy.get('[data-testid="jcrstats-snapshot-confirm-delete"]', { timeout: 10000 }).first().click()
+                // A success status banner confirms the deletion to sighted users (A-12).
+                cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'deleted')
+                // The list re-renders only after the post-delete refetch resolves, so use a retrying
+                // assertion (not a one-shot DOM read) to wait for the row count to actually shrink.
+                cy.get('[data-testid="jcrstats-snapshots"] li', { timeout: 30000 }).should(
+                    'have.length.lessThan',
+                    rowsBefore,
+                )
             })
-        })
     })
 
     // ------------------------------------------------------------------
@@ -245,10 +254,15 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('#jcrstats-path').clear()
         cy.get('#jcrstats-path').type('/sites')
         cy.contains('button', 'Compute').click()
-        // The Cancel button appears while the computation is in progress.
-        cy.contains('button', 'Cancel', { timeout: 30000 }).should('be.visible').click()
-        // An info banner (role="status", not role="alert") reports the cancellation.
+        // Harden against racing a fast job: wait until the computation is visibly in progress
+        // (the progress block renders only while computing === true) before clicking Cancel, rather
+        // than assuming the job is still running by the time we act.
+        cy.get('[data-testid="jcrstats-progress"]', { timeout: 30000 }).should('be.visible')
+        cy.get('[data-testid="jcrstats-progress"]').contains('button', 'Cancel').click()
+        // An info banner (role="status", not role="alert") reports the cancellation, and the
+        // progress block disappears once watching stops.
         cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'ancel')
+        cy.get('[data-testid="jcrstats-progress"]').should('not.exist')
     })
 
     // ------------------------------------------------------------------

@@ -586,7 +586,10 @@ export const JcrStatsAdmin = () => {
         measure();
         window.addEventListener('resize', measure);
         return () => window.removeEventListener('resize', measure);
-    }, [flameData, measure, view]);
+        // Re-measure when the Exclusions/Saved-executions panels appear or change size: they render
+        // above the results, so their (async) arrival shifts the flamegraph's top — without this the
+        // graph keeps its earlier height and can overflow past the viewport bottom.
+    }, [flameData, measure, view, snapshots.length, exclusions.length]);
 
     // When the polled status reports the async computation is done, fetch + render the cached result.
     useEffect(() => {
