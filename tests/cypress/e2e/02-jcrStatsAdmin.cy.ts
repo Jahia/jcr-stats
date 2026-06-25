@@ -1,7 +1,7 @@
 import {DocumentNode} from 'graphql'
 
 describe('JCR Stats - Admin UI', () => {
-    const adminPath = '/jahia/administration/jcrStatsExecution'
+    const adminPath = '/jahia/administration/jcrStats'
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const getStatus: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getStatus.graphql')
 
@@ -219,13 +219,13 @@ describe('JCR Stats - Admin UI', () => {
             force: true,
         })
         cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
-        // Auto-accept the confirm() dialog so the deletion proceeds.
-        cy.on('window:confirm', () => true)
-        cy.get('[data-testid="jcrstats-snapshots"]').then(($panel) => {
-            const rowsBefore = $panel.find('li').length
-            cy.wrap($panel).contains('button', 'Delete').first().click()
+        cy.get('[data-testid="jcrstats-snapshots"] li').its('length').then((rowsBefore) => {
+            // Delete uses an accessible inline two-step confirm (no native window.confirm):
+            // the first click arms the row, then the inline "Confirm delete" button performs it.
+            cy.get('[data-testid="jcrstats-snapshots"]').contains('button', 'Delete').first().click()
+            cy.get('[data-testid="jcrstats-snapshot-confirm-delete"]', { timeout: 10000 }).first().click()
             // A success status banner confirms the deletion to sighted users (A-12).
-            cy.get('[role="status"]').should('contain', 'deleted')
+            cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'deleted')
             // The list shrinks (or the panel disappears when it was the last one).
             cy.get('body').then(($body) => {
                 const panel = $body.find('[data-testid="jcrstats-snapshots"]')
