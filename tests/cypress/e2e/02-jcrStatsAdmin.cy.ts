@@ -84,7 +84,7 @@ describe('JCR Stats - Admin UI', () => {
             .and('contain', 'systemsite')
     })
 
-    it('sizes the flamegraph to the viewport: full-width and not past the window bottom', () => {
+    it('renders the flamegraph full-width with a usable height inside a scrollable container', () => {
         cy.login()
         cy.visit(adminPath)
         cy.contains('button', 'Compute').click()
@@ -93,8 +93,16 @@ describe('JCR Stats - Admin UI', () => {
         cy.window().then((win) => {
             cy.get('[data-testid="jcrstats-flamegraph-react"]').then(($el) => {
                 const rect = $el[0].getBoundingClientRect()
+                // Full-width: uses well over half the available admin content width.
                 expect(rect.width, 'flamegraph width').to.be.greaterThan(win.innerWidth * 0.5)
-                expect(rect.bottom, 'flamegraph bottom vs window').to.be.at.most(win.innerHeight + 4)
+                // Usable height: never collapses below the MIN_HEIGHT floor (320px).
+                expect(rect.height, 'flamegraph height').to.be.at.least(300)
+            })
+            // The Saved executions panel now sits above the results, so on a short viewport the
+            // flamegraph can extend past the window bottom. That is intentional: the route
+            // container owns a vertical scrollbar (overflow-y:auto), so nothing is ever clipped.
+            cy.get('[data-testid="jcrstats-container"]').then(($c) => {
+                expect(win.getComputedStyle($c[0]).overflowY, 'route container scrolls vertically').to.eq('auto')
             })
         })
     })

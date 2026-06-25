@@ -870,7 +870,7 @@ export const JcrStatsAdmin = () => {
     const isInfo = INFO_STATUSES.includes(status);
 
     return (
-        <div className={styles.js_container}>
+        <div className={styles.js_container} data-testid="jcrstats-container">
             {/*
               M-3/M-4: Single polite status region for success / info announcements.
               The visible error banner below carries role="alert" so it serves as the
