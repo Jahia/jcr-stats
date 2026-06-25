@@ -5868,6 +5868,58 @@ __metadata:
   languageName: node
   linkType: hard
 
+"jcr-stats-cypress@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "jcr-stats-cypress@workspace:."
+  dependencies:
+    "@apollo/client": "npm:^3.14.0"
+    "@babel/core": "npm:^7.25.2"
+    "@babel/preset-env": "npm:^7.25.3"
+    "@cypress/code-coverage": "npm:^4.0.3"
+    "@cypress/webpack-preprocessor": "npm:^5.9.1"
+    "@faker-js/faker": "npm:^10.0.0"
+    "@jahia/cypress": "npm:^7.0.0"
+    "@jahia/eslint-config": "npm:^2.1.2"
+    "@typescript-eslint/eslint-plugin": "npm:^5.2.0"
+    "@typescript-eslint/parser": "npm:^5.2.0"
+    babel-loader: "npm:^8.3.0"
+    babel-plugin-istanbul: "npm:^6.1.1"
+    compare-versions: "npm:^6.1.1"
+    cross-fetch: "npm:3.1.6"
+    cypress: "npm:15.14.2"
+    cypress-file-upload: "npm:^5.0.8"
+    cypress-iframe: "npm:^1.0.1"
+    cypress-multi-reporters: "npm:^1.6.3"
+    cypress-terminal-report: "npm:^5.3.7"
+    cypress-wait-until: "npm:^3.0.1"
+    dotenv: "npm:^10.0.0"
+    eslint: "npm:^8.51.0"
+    eslint-config-prettier: "npm:^8.3.0"
+    eslint-plugin-chai-friendly: "npm:^0.7.2"
+    eslint-plugin-cypress: "npm:^2.15.1"
+    eslint-plugin-import: "npm:^2.25.2"
+    eslint-plugin-jest: "npm:^27.2.1"
+    eslint-plugin-n: "npm:^15.0.0"
+    eslint-plugin-prettier: "npm:^4.0.0"
+    eslint-plugin-promise: "npm:^6.0.0"
+    eslint-plugin-react: "npm:^7.32.2"
+    eslint-plugin-react-hooks: "npm:^4.6.0"
+    graphql: "npm:^15.10.1"
+    graphql-tag: "npm:^2.12.6"
+    jahia-reporter: "npm:^0.4.2"
+    mocha: "npm:^10.0.0"
+    mocha-junit-reporter: "npm:^2.2.0"
+    mochawesome: "npm:^7.1.4"
+    mochawesome-merge: "npm:^4.2.0"
+    mochawesome-report-generator: "npm:^6.3.2"
+    prettier: "npm:^2.0.0"
+    source-map-support: "npm:^0.5.20"
+    supports-color: "npm:^9.0.2"
+    typescript: "npm:^4.4.4"
+    webpack: "npm:5.104.1"
+  languageName: unknown
+  linkType: soft
+
 "jest-worker@npm:^27.4.5":
   version: 27.5.1
   resolution: "jest-worker@npm:27.5.1"
@@ -8657,58 +8709,6 @@ __metadata:
   checksum: 10/da548149dd9c130a8a2587c9ee71ea30128d1526925707e2d01ed9c5c45c9e9f86733c66a328247cdd5f7c1516fb25b0f959ba754bfbe15072aa99ff96468a29
   languageName: node
   linkType: hard
-
-"versions-cleaner-cypress@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "versions-cleaner-cypress@workspace:."
-  dependencies:
-    "@apollo/client": "npm:^3.14.0"
-    "@babel/core": "npm:^7.25.2"
-    "@babel/preset-env": "npm:^7.25.3"
-    "@cypress/code-coverage": "npm:^4.0.3"
-    "@cypress/webpack-preprocessor": "npm:^5.9.1"
-    "@faker-js/faker": "npm:^10.0.0"
-    "@jahia/cypress": "npm:^7.0.0"
-    "@jahia/eslint-config": "npm:^2.1.2"
-    "@typescript-eslint/eslint-plugin": "npm:^5.2.0"
-    "@typescript-eslint/parser": "npm:^5.2.0"
-    babel-loader: "npm:^8.3.0"
-    babel-plugin-istanbul: "npm:^6.1.1"
-    compare-versions: "npm:^6.1.1"
-    cross-fetch: "npm:3.1.6"
-    cypress: "npm:15.14.2"
-    cypress-file-upload: "npm:^5.0.8"
-    cypress-iframe: "npm:^1.0.1"
-    cypress-multi-reporters: "npm:^1.6.3"
-    cypress-terminal-report: "npm:^5.3.7"
-    cypress-wait-until: "npm:^3.0.1"
-    dotenv: "npm:^10.0.0"
-    eslint: "npm:^8.51.0"
-    eslint-config-prettier: "npm:^8.3.0"
-    eslint-plugin-chai-friendly: "npm:^0.7.2"
-    eslint-plugin-cypress: "npm:^2.15.1"
-    eslint-plugin-import: "npm:^2.25.2"
-    eslint-plugin-jest: "npm:^27.2.1"
-    eslint-plugin-n: "npm:^15.0.0"
-    eslint-plugin-prettier: "npm:^4.0.0"
-    eslint-plugin-promise: "npm:^6.0.0"
-    eslint-plugin-react: "npm:^7.32.2"
-    eslint-plugin-react-hooks: "npm:^4.6.0"
-    graphql: "npm:^15.10.1"
-    graphql-tag: "npm:^2.12.6"
-    jahia-reporter: "npm:^0.4.2"
-    mocha: "npm:^10.0.0"
-    mocha-junit-reporter: "npm:^2.2.0"
-    mochawesome: "npm:^7.1.4"
-    mochawesome-merge: "npm:^4.2.0"
-    mochawesome-report-generator: "npm:^6.3.2"
-    prettier: "npm:^2.0.0"
-    source-map-support: "npm:^0.5.20"
-    supports-color: "npm:^9.0.2"
-    typescript: "npm:^4.4.4"
-    webpack: "npm:5.104.1"
-  languageName: unknown
-  linkType: soft
 
 "watchpack@npm:^2.4.4":
   version: 2.5.1

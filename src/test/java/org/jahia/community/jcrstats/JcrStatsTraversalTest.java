@@ -4,6 +4,11 @@ import org.apache.jackrabbit.JcrConstants;
 import org.jahia.services.content.JCRNodeIteratorWrapper;
 import org.jahia.services.content.JCRNodeWrapper;
 import org.jahia.services.content.JCRPropertyWrapper;
+import org.jahia.services.content.JCRSessionWrapper;
+import org.jahia.services.content.JCRWorkspaceWrapper;
+import org.jahia.services.content.QueryManagerWrapper;
+import org.jahia.services.query.QueryResultWrapper;
+import org.jahia.services.query.QueryWrapper;
 import org.junit.Test;
 
 import javax.jcr.RepositoryException;
@@ -12,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -31,7 +37,8 @@ public class JcrStatsTraversalTest {
 
     @Test
     public void computeNode_nestedTree_aggregatesSizeCountAndVisitsEachNodeOnce() throws Exception {
-        // Arrange: /r -> {a(300) -> g(100), b(200)}
+        // Arrange a small tree rooted at r with two children a and b. Child a is sized three hundred
+        // and itself has one grandchild g sized one hundred; child b is sized two hundred.
         JCRNodeWrapper grand = mockNode("/r/a/g", 100L);
         JCRNodeWrapper childA = mockNode("/r/a", 300L, grand);
         JCRNodeWrapper childB = mockNode("/r/b", 200L);
@@ -39,7 +46,7 @@ public class JcrStatsTraversalTest {
         AtomicLong visited = new AtomicLong();
 
         // Act
-        NodeStats stats = computer.computeNode(null, root, visited);
+        NodeStats stats = computer.computeNode(null, root, visited, () -> false, path -> false);
 
         // Assert: sizes roll up (300 + 100 + 200), all four nodes counted and visited exactly once
         assertThat(stats.getSize()).isEqualTo(600L);
@@ -54,7 +61,7 @@ public class JcrStatsTraversalTest {
         // Insertion order deliberately small-then-large; NodeStats must re-order size-descending.
         JCRNodeWrapper root = mockNode("/r", NO_DATA, small, large);
 
-        NodeStats stats = computer.computeNode(null, root, new AtomicLong());
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false, path -> false);
 
         List<String> names = new ArrayList<>();
         stats.getSubNodeStats().forEach(child -> names.add(child.getName()));
@@ -65,7 +72,7 @@ public class JcrStatsTraversalTest {
     public void computeNode_leafWithData_readsJcrDataLength() throws Exception {
         JCRNodeWrapper leaf = mockNode("/r/file", 4096L);
 
-        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong());
+        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong(), () -> false, path -> false);
 
         assertThat(stats.getSize()).isEqualTo(4096L);
         assertThat(stats.getNodeCount()).isEqualTo(1L);
@@ -75,9 +82,99 @@ public class JcrStatsTraversalTest {
     public void computeNode_leafWithoutData_hasZeroSize() throws Exception {
         JCRNodeWrapper leaf = mockNode("/r/folder", NO_DATA);
 
-        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong());
+        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong(), () -> false, path -> false);
 
         assertThat(stats.getSize()).isZero();
+    }
+
+    @Test
+    public void computeNode_childListingUnrecoverable_skipsSubtreeInsteadOfAborting() throws Exception {
+        // Mirrors the production crash: getNodes() on an external-provider mount throws because a child
+        // name (e.g. an ISO-8601 timestamp with ':') is not a valid JCR path. With a null session the
+        // escaped-query fallback also fails, so the branch is skipped — but no exception propagates.
+        JCRNodeWrapper node = mock(JCRNodeWrapper.class);
+        when(node.getPath()).thenReturn("/sites/systemsite/files/cloud-dumps/modulesdump");
+        when(node.getNodes()).thenThrow(new RepositoryException("Invalid path: ':' not valid name character"));
+
+        NodeStats stats = computer.computeNode(null, node, new AtomicLong(), () -> false, path -> false);
+
+        // The node itself is still counted, just with no children, and the whole job survives.
+        assertThat(stats.getNodeCount()).isEqualTo(1L);
+        assertThat(stats.getSubNodeStats()).isEmpty();
+    }
+
+    @Test
+    public void computeNode_oneFailingChild_othersStillAggregated() throws Exception {
+        JCRNodeWrapper good1 = mockNode("/r/a", 100L);
+        JCRNodeWrapper bad = mock(JCRNodeWrapper.class);
+        when(bad.getPath()).thenThrow(new RepositoryException("boom"));
+        JCRNodeWrapper good2 = mockNode("/r/b", 200L);
+        JCRNodeWrapper root = mockNode("/r", NO_DATA, good1, bad, good2);
+
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false, path -> false);
+
+        // The failing child is skipped; root + the two good children are counted and their sizes summed.
+        assertThat(stats.getNodeCount()).isEqualTo(3L);
+        assertThat(stats.getSize()).isEqualTo(300L);
+    }
+
+    @Test
+    public void computeNode_whenCancelled_abortsImmediately() throws Exception {
+        JCRNodeWrapper root = mockNode("/r", NO_DATA, mockNode("/r/a", 100L));
+
+        // A cancellation flag that is already set must stop the traversal at the first node, and it must
+        // do so via the dedicated cancellation exception type (not just any RepositoryException) so the
+        // service can distinguish a clean cancel from a genuine failure — that exception type is the
+        // real contract JcrStatsService relies on.
+        assertThatThrownBy(() -> computer.computeNode(null, root, new AtomicLong(), () -> true, path -> false))
+                .isInstanceOf(JcrStatsComputer.CancelledException.class);
+    }
+
+    @Test
+    public void computeNode_excludedChild_isSkippedWithItsSubtree() throws Exception {
+        JCRNodeWrapper keep = mockNode("/r/keep", 100L);
+        JCRNodeWrapper drop = mockNode("/r/drop", 999L, mockNode("/r/drop/child", 500L));
+        JCRNodeWrapper root = mockNode("/r", NO_DATA, keep, drop);
+
+        // Exclude /r/drop (and therefore its child) — only /r and /r/keep remain.
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false,
+                path -> path.equals("/r/drop"));
+
+        assertThat(stats.getNodeCount()).isEqualTo(2L);
+        assertThat(stats.getSize()).isEqualTo(100L);
+    }
+
+    @Test
+    public void computeNode_directListingFails_recoversValidChildrenViaEscapedQuery() throws Exception {
+        // The motivating crash's SUCCESS path: getNodes() throws (a child name is not a valid JCR path),
+        // but the escaped ISCHILDNODE query returns the valid children, so the branch is recovered.
+        JCRNodeWrapper good1 = mockNode("/mount/a", 100L);
+        JCRNodeWrapper good2 = mockNode("/mount/b", 200L);
+
+        JCRNodeWrapper parent = mock(JCRNodeWrapper.class);
+        when(parent.getPath()).thenReturn("/mount");
+        when(parent.hasProperty(JcrConstants.JCR_DATA)).thenReturn(false);
+        when(parent.getNodes()).thenThrow(new RepositoryException("Invalid path: ':' not valid name character"));
+
+        // Wire session → workspace → queryManager → query → result → iterator(good1, good2).
+        JCRNodeIteratorWrapper queriedChildren = mockIterator(good1, good2);
+        QueryResultWrapper result = mock(QueryResultWrapper.class);
+        when(result.getNodes()).thenReturn(queriedChildren);
+        QueryWrapper query = mock(QueryWrapper.class);
+        when(query.execute()).thenReturn(result);
+        QueryManagerWrapper queryManager = mock(QueryManagerWrapper.class);
+        when(queryManager.createQuery(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(query);
+        JCRWorkspaceWrapper workspace = mock(JCRWorkspaceWrapper.class);
+        when(workspace.getQueryManager()).thenReturn(queryManager);
+        JCRSessionWrapper session = mock(JCRSessionWrapper.class);
+        when(session.getWorkspace()).thenReturn(workspace);
+
+        NodeStats stats = computer.computeNode(session, parent, new AtomicLong(), () -> false, path -> false);
+
+        // Both queried children are counted and their sizes summed, despite the direct listing failure.
+        assertThat(stats.getNodeCount()).isEqualTo(3L);
+        assertThat(stats.getSize()).isEqualTo(300L);
     }
 
     // --- helpers ---

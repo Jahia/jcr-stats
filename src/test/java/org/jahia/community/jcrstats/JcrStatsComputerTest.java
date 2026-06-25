@@ -3,6 +3,8 @@ package org.jahia.community.jcrstats;
 import org.junit.Before;
 import org.junit.Test;
 
+import org.json.JSONObject;
+
 import java.io.BufferedWriter;
 import java.io.StringWriter;
 
@@ -116,6 +118,130 @@ public class JcrStatsComputerTest {
 
         // root + alpha + beta + leaf = 4
         assertThat(JcrStatsComputer.countNodes(root)).isEqualTo(4L);
+    }
+
+    // --- JSON snapshot serialization ---
+
+    @Test
+    public void jsonEscape_escapesQuotesBackslashAndControlChars() {
+        assertThat(JcrStatsComputer.jsonEscape("a\"b\\c")).isEqualTo("a\\\"b\\\\c");
+        assertThat(JcrStatsComputer.jsonEscape("line\nbreak\ttab")).isEqualTo("line\\nbreak\\ttab");
+        assertThat(JcrStatsComputer.jsonEscape(null)).isEmpty();
+    }
+
+    @Test
+    public void buildSnapshotJson_producesLoadableEnvelopeWithTree() {
+        NodeStats root = new NodeStats("/");
+        NodeStats child = new NodeStats("/alpha");
+        child.setSize(300L);
+        root.addSubNodeStats(child);
+
+        String json = JcrStatsComputer.buildSnapshotJson(root, "/");
+
+        // Envelope matches the UI importer's expected shape (format + tree with name/size/nodeCount).
+        assertThat(json)
+                .contains("\"format\":\"jcr-stats-flamegraph\"")
+                .contains("\"version\":1")
+                .contains("\"path\":\"/\"")
+                .contains("\"maxDepth\":6")
+                .contains("\"name\":\"ROOT\"")
+                .contains("\"name\":\"alpha\"")
+                .contains("\"size\":300")
+                .contains("\"nodeCount\":2");
+    }
+
+    @Test
+    public void jsonEscape_escapesBackspaceFormFeedAndControlChars() {
+        assertThat(JcrStatsComputer.jsonEscape("a\bb")).isEqualTo("a\\bb");
+        assertThat(JcrStatsComputer.jsonEscape("a\fb")).isEqualTo("a\\fb");
+        // A C0 control character (U+0001) becomes a six-character unicode escape.
+        assertThat(JcrStatsComputer.jsonEscape("a\u0001b")).isEqualTo("a\\u0001b");
+    }
+
+    @Test
+    public void jsonEscape_escapesLoneSurrogate() {
+        // A lone high surrogate would otherwise produce invalid UTF-8/JSON; it must be unicode-escaped.
+        assertThat(JcrStatsComputer.jsonEscape("a\ud800b")).isEqualTo("a\\ud800b");
+    }
+
+    @Test
+    public void buildSnapshotJson_emptyTree_parsesWithEmptyChildren() {
+        NodeStats root = new NodeStats("/");
+
+        String json = JcrStatsComputer.buildSnapshotJson(root, "/");
+
+        // The envelope must be valid, parseable JSON (not just substring-shaped).
+        JSONObject parsed = new JSONObject(json);
+        assertThat(parsed.getString("format")).isEqualTo("jcr-stats-flamegraph");
+        JSONObject tree = parsed.getJSONObject("tree");
+        assertThat(tree.getString("name")).isEqualTo("ROOT");
+        assertThat(tree.getJSONArray("children")).isEmpty();
+    }
+
+    @Test
+    public void buildSnapshotJson_treeDeeperThanMaxDepth_prunesBeyondLevelSix() {
+        // Build a chain of depth 8 (root + 7 descendants). SNAPSHOT_MAX_DEPTH is 6, so the level-7 node
+        // must be pruned: walking the children array 6 times reaches a leaf with no further children.
+        NodeStats root = new NodeStats("/n0");
+        NodeStats current = root;
+        for (int i = 1; i <= 7; i++) {
+            NodeStats child = new NodeStats("/n0/n" + i);
+            current.addSubNodeStats(child);
+            current = child;
+        }
+
+        String json = JcrStatsComputer.buildSnapshotJson(root, "/n0");
+
+        JSONObject node = new JSONObject(json).getJSONObject("tree");
+        // Descend the maximum kept depth (6 child levels).
+        for (int level = 0; level < 6; level++) {
+            assertThat(node.getJSONArray("children")).as("level %d still has children", level).hasSize(1);
+            node = node.getJSONArray("children").getJSONObject(0);
+        }
+        // At level 6 (the 7th node) children are pruned even though a deeper node exists in the model.
+        assertThat(node.getJSONArray("children")).isEmpty();
+    }
+
+    // --- saveSnapshot validation branches (rejection paths return null) ---
+
+    @Test
+    public void saveSnapshot_nullOrEmpty_isRejected() {
+        assertThat(computer.saveSnapshot(null)).isNull();
+        assertThat(computer.saveSnapshot("")).isNull();
+    }
+
+    @Test
+    public void saveSnapshot_wrongFormat_isRejected() {
+        // Valid JSON object, but the format tag is not the jcr-stats envelope.
+        assertThat(computer.saveSnapshot("{\"format\":\"something-else\",\"tree\":{}}")).isNull();
+    }
+
+    @Test
+    public void saveSnapshot_malformedJson_isRejected() {
+        // Contains the format substring but is not parseable JSON — the old substring check would have
+        // wrongly accepted this; the structural parse rejects it.
+        assertThat(computer.saveSnapshot("not json \"format\":\"jcr-stats-flamegraph\"")).isNull();
+    }
+
+    @Test
+    public void saveSnapshot_missingTree_isRejected() {
+        assertThat(computer.saveSnapshot("{\"format\":\"jcr-stats-flamegraph\"}")).isNull();
+    }
+
+    // --- isSnapshotPath (delete guard) ---
+
+    @Test
+    public void isSnapshotPath_acceptsDirectChildFile_rejectsEverythingElse() {
+        assertThat(JcrStatsComputer.isSnapshotPath(JcrStatsComputer.SNAPSHOTS_PATH + "/jcr-stats-x.json")).isTrue();
+        // nested deeper than a direct child
+        assertThat(JcrStatsComputer.isSnapshotPath(JcrStatsComputer.SNAPSHOTS_PATH + "/sub/x.json")).isFalse();
+        // the folder itself (no file segment)
+        assertThat(JcrStatsComputer.isSnapshotPath(JcrStatsComputer.SNAPSHOTS_PATH)).isFalse();
+        // outside the snapshots folder
+        assertThat(JcrStatsComputer.isSnapshotPath("/sites/systemsite/files/secret")).isFalse();
+        // traversal attempt
+        assertThat(JcrStatsComputer.isSnapshotPath(JcrStatsComputer.SNAPSHOTS_PATH + "/../../etc")).isFalse();
+        assertThat(JcrStatsComputer.isSnapshotPath(null)).isFalse();
     }
 
     // --- flamegraphUrl ---

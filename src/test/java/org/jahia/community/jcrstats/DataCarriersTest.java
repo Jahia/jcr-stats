@@ -31,7 +31,8 @@ public class DataCarriersTest {
     @Test
     public void gqlJcrStatsStatus_gettersReturnConstructorArgs() {
         JcrStatsQuery.GqlJcrStatsStatus status =
-                new JcrStatsQuery.GqlJcrStatsStatus(true, "/sites/bar", "boom", false, 100L, 250L, 42L);
+                new JcrStatsQuery.GqlJcrStatsStatus(true, "/sites/bar", "boom", false,
+                        new JcrStatsQuery.GqlJcrStatsStatus.Progress(100L, 250L, 42L), true);
 
         assertThat(status.isRunning()).isTrue();
         assertThat(status.getPath()).isEqualTo("/sites/bar");
@@ -40,13 +41,15 @@ public class DataCarriersTest {
         assertThat(status.getStartedAt()).isEqualTo(100L);
         assertThat(status.getElapsedMs()).isEqualTo(250L);
         assertThat(status.getVisitedCount()).isEqualTo(42L);
+        assertThat(status.isCancelled()).isTrue();
     }
 
     @Test
     public void gqlJcrStatsStatus_emptyState_matchesNoServiceSentinel() {
         // Mirrors the sentinel built when the service is unavailable.
         JcrStatsQuery.GqlJcrStatsStatus status =
-                new JcrStatsQuery.GqlJcrStatsStatus(false, null, null, false, 0L, 0L, 0L);
+                new JcrStatsQuery.GqlJcrStatsStatus(false, null, null, false,
+                        new JcrStatsQuery.GqlJcrStatsStatus.Progress(0L, 0L, 0L), false);
 
         assertThat(status.isRunning()).isFalse();
         assertThat(status.getPath()).isNull();
@@ -55,6 +58,7 @@ public class DataCarriersTest {
         assertThat(status.getStartedAt()).isZero();
         assertThat(status.getElapsedMs()).isZero();
         assertThat(status.getVisitedCount()).isZero();
+        assertThat(status.isCancelled()).isFalse();
     }
 
     @Test

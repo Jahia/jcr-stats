@@ -5,6 +5,7 @@ import graphql.annotations.annotationTypes.GraphQLField;
 import graphql.annotations.annotationTypes.GraphQLName;
 import org.jahia.community.jcrstats.ComputeResult;
 import org.jahia.community.jcrstats.JcrStatsComputer;
+import org.jahia.community.jcrstats.JcrStatsConfig;
 import org.jahia.community.jcrstats.JcrStatsService;
 import org.jahia.modules.graphql.provider.dxm.security.GraphQLRequiresPermission;
 import org.jahia.osgi.BundleUtils;
@@ -29,6 +30,61 @@ public class JcrStatsMutation {
             String path) {
         final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
         return service != null && service.start(path);
+    }
+
+    @GraphQLField
+    @GraphQLName("cancel")
+    @GraphQLDescription("Requests cancellation of the running asynchronous computation. Returns true if a job was running and cancellation was requested, false if nothing was running.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean cancel() {
+        final JcrStatsService service = BundleUtils.getOsgiService(JcrStatsService.class, null);
+        return service != null && service.cancel();
+    }
+
+    @GraphQLField
+    @GraphQLName("saveSnapshot")
+    @GraphQLDescription("Stores a snapshot JSON (e.g. a file loaded in the UI) alongside the auto-saved execution snapshots, so loaded data joins the saved-executions history. Returns true on success.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean saveSnapshot(
+            @GraphQLName("json")
+            @GraphQLDescription("Snapshot JSON in the jcr-stats export envelope (format jcr-stats-flamegraph)")
+            String json) {
+        return new JcrStatsComputer().saveSnapshot(json) != null;
+    }
+
+    @GraphQLField
+    @GraphQLName("deleteSnapshot")
+    @GraphQLDescription("Deletes a stored execution snapshot. The path must be a file directly under the snapshots folder; any other path is rejected. Returns true if a snapshot was found and deleted.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean deleteSnapshot(
+            @GraphQLName("path")
+            @GraphQLDescription("JCR path of the snapshot file to delete (must be under the jcr-stats snapshots folder)")
+            String path) {
+        return new JcrStatsComputer().deleteSnapshot(path);
+    }
+
+    @GraphQLField
+    @GraphQLName("addExclusion")
+    @GraphQLDescription("Adds an absolute JCR path to the exclusion list: the path and its whole subtree are skipped in future computations. Persisted to the OSGi configuration file. Returns true on success, false if the path is invalid or could not be saved.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean addExclusion(
+            @GraphQLName("path")
+            @GraphQLDescription("Absolute JCR path to exclude (e.g. /sites/mySite/files/cloud-dumps)")
+            String path) {
+        final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
+        return config != null && config.addExclusion(path);
+    }
+
+    @GraphQLField
+    @GraphQLName("removeExclusion")
+    @GraphQLDescription("Removes a path from the exclusion list and persists the change. Returns true on success.")
+    @GraphQLRequiresPermission("jcrStatsAdmin")
+    public Boolean removeExclusion(
+            @GraphQLName("path")
+            @GraphQLDescription("Absolute JCR path to stop excluding")
+            String path) {
+        final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
+        return config != null && config.removeExclusion(path);
     }
 
     @GraphQLField

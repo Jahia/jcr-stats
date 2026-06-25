@@ -207,6 +207,23 @@ export const signedBytes = delta => {
     return `${sign}${formatBytes(Math.abs(delta))}`;
 };
 
+// Human-readable absolute timestamp from epoch millis, e.g. "23 Jun 2026, 14:05".
+// Returns null for missing / non-positive / non-finite input so callers can show a fallback label.
+export const formatTimestamp = (epochMillis, locale = undefined) => {
+    const ms = Number(epochMillis);
+    if (!Number.isFinite(ms) || ms <= 0) {
+        return null;
+    }
+
+    try {
+        return new Date(ms).toLocaleString(locale, {
+            year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+    } catch (_) {
+        return new Date(ms).toISOString();
+    }
+};
+
 // Human-readable elapsed time, e.g. "8s" or "2m 05s".
 export const formatDuration = ms => {
     const totalSeconds = Math.max(0, Math.floor(Number(ms) / 1000) || 0);

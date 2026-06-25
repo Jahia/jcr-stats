@@ -5,7 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.1] — Unreleased
+## [2.1.2] — Unreleased
+
+### Added
+
+- **Saved executions (server-side JSON history)** — Every completed asynchronous computation is automatically saved as a JSON snapshot in the JCR (`/sites/systemsite/files/jcr-stats/snapshots/jcr-stats-<timestamp>.json`), so a past run's flamegraph can be reopened later by anyone — including after a restart. A **Saved executions** list shows the history (most recent first) with **View** (reload a run into the viewer) and **Compare** (load a run as the comparison baseline) actions — so two saved executions can be diffed in the existing Comparison view. New GraphQL query `jcrStats.snapshots`. The snapshot uses the same envelope as the manual Save/Load (depth-limited to the rendered tree). Snapshots accumulate; prune the JCR folder if needed.
+- **Path exclusions** — Paths can be excluded from the computation (the path and its whole subtree are skipped). Click a frame in the flamegraph and choose **Exclude this path**; excluded paths are listed with a **Remove** control. Exclusions are persisted as an OSGi configuration file (`${karaf.etc}/org.jahia.community.jcrstats.cfg`, property `jcrStats.excludedPaths`) via a `ManagedService`, so they survive restarts and can also be edited by hand. New GraphQL ops: `jcrStats.exclusions` (query), `jcrStats.addExclusion(path)` / `jcrStats.removeExclusion(path)` (mutations). Exclusions take effect on the next computation.
+- **Server-side cancellation** — New `jcrStats.cancel` mutation and a `cancelled` flag on `jcrStats.status`. The traversal now polls a cooperative cancellation flag at the start of every node, so a running job stops between nodes (never mid-JCR-operation).
+
+### Changed
+
+- **Unified data store / simpler comparison UI** — **Load data** now also stores the loaded file as a server snapshot (new `jcrStats.saveSnapshot` mutation), so loaded data joins the **Saved executions** history like a computed run. The standalone **Compare with…** button (file-based baseline upload) was removed — comparison is now driven from the Saved executions list (**View** one run, **Compare** another). The diff view itself is unchanged.
+
+### Fixed
+
+- **The "Cancel" button now actually stops the computation** — Previously it only stopped client-side polling while the server job kept running to completion (the message even said so). It now calls `jcrStats.cancel`, which stops the server-side traversal; the UI reports "Computation cancelled."
+- **Whole-site traversal no longer aborts on un-listable branches** — Walking a subtree that descends into an external data-source mount whose child names are not valid JCR paths (e.g. `cloud-dumps` nodes named with an ISO-8601 timestamp, where `:` is the namespace-prefix separator) raised `RepositoryException: Invalid path … ':' not valid name character` from the eager `getNodes()` listing and aborted the entire computation. When direct listing fails, the traversal now falls back to an `ISCHILDNODE` query whose path is escaped via `JCRContentUtils.sqlEncode`, recovering the valid children of that node instead of dropping the whole branch (the single un-representable node — which cannot be a JCR node at all — is simply omitted). A `WARN` is logged; only if the escaped query also fails is the node's subtree skipped. The hard `MAX_VISITED_NODES` safety limit still aborts as before.
+
+#### Review hardening (multi-dimensional blind review)
+
+- **Snapshot/flamegraph writes use a dedicated system session** via `JCRTemplate.doExecuteWithSystemSession` instead of the request-bound `getCurrentSystemSession`, fixing a thread-safety/lifecycle hazard when writing from the background computation thread.
+- **Cancellation classified by exception type** (`CancelledException`) rather than a flag, so a genuine error occurring after a cancel request is no longer mis-logged as a clean cancel.
+- **Flamegraph HTML write aborts on a failed header/footer** instead of uploading a half-written file.
+- **`jsonEscape` now escapes lone UTF-16 surrogates**; `jcr:data` length reads guard against multi-valued properties; `exportedAt` uses UTC `Instant`.
+- **Accessibility (WCAG 2.2 AAA):** focus is no longer relocated on async completion (only on user-initiated view changes); the reduced-motion override fully stops the progress-bar animation; info/success use `role="status"` (errors keep `role="alert"`); icon/list buttons have descriptive accessible names; the flamegraph uses `role="img"`; progressbar exposes `aria-valuemin/max`; heading reflows at 400% zoom; border/link colours raised to AAA contrast.
+- **Frontend correctness:** a stale previous-run status can no longer apply its result to a new run (guarded by `startedAt`/a generation counter); the saved-executions refetch is scoped to successful computations; load-as-snapshot failures surface to the user.
+- **Reliability:** replaced a backtracking-prone path-validation regex with linear string checks (Sonar S5998).
+
+### Changed
+
+- **Saved executions list** now shows each run's date and size, with a per-row **Delete**; snapshots are capped at the 50 most recent (oldest pruned on write). "Compare" is disabled until a current result is loaded, and loading a file states it was saved to history.
+
+### Security
+
+- **`saveSnapshot` validates the uploaded envelope structurally** (parsed JSON object with `format == jcr-stats-flamegraph` and a `tree`) instead of a substring match; **`deleteSnapshot` only deletes within the snapshots folder**; excluded-path validation adds a length cap and stricter absolute-path checks.
+
+### Tests
+
+- Added regression tests to `JcrStatsTraversalTest`: a node whose children cannot be listed at all is skipped (no exception propagates), a single failing child no longer drops its siblings, and the escaped-query fallback recovers valid children when direct listing fails.
+- Raised coverage across the backend (`saveSnapshot` validation, `cancel`/`isLastRunCancelled`, `jsonEscape`/`buildSnapshotJson` edge cases, exclusion edge cases) and the frontend (the `handlePolledStatus`/`applyComputedResult` controller, status edge cases) — 87 Java + 106 JS tests. New Cypress specs cover the cancel, snapshot View/Compare/Delete, and exclusion flows.
+
+---
+
+## [2.1.1] — 2026-06-23
 
 ### Changed
 
@@ -116,7 +158,7 @@ Earlier releases provided only the Karaf `jcr-stats:compute-size` command. Detai
 
 ## Notes
 
-- **MAX_DEPTH Coupling** — The flame graph depth limit is set to 6 levels and is hardcoded in JcrStatsQuery.DEFAULT_MAX_DEPTH, JcrStats.jsx MAX_DEPTH constant, and the GraphQL query nesting structure. When changing this value, update all three locations.
+- **MAX_DEPTH Coupling** — The flame graph depth limit is set to 6 levels and is hardcoded in four places that must stay in sync: `JcrStatsQuery.DEFAULT_MAX_DEPTH`, `JcrStatsComputer.SNAPSHOT_MAX_DEPTH`, the `MAX_DEPTH` constant in `jcrStatsController.js`, and the GraphQL `getTree` query nesting structure (6 levels of `children { ... }`). When changing this value, update all four locations.
 
 - **Flamegraph Storage** — Generated HTML files are persisted at `/sites/systemsite/files/jcr-stats/` in the JCR for archival and later comparison.
 

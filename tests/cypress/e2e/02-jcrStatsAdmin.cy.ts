@@ -1,7 +1,7 @@
-import {DocumentNode} from 'graphql'
+import { DocumentNode } from 'graphql'
 
 describe('JCR Stats - Admin UI', () => {
-    const adminPath = '/jahia/administration/jcrStatsExecution'
+    const adminPath = '/jahia/administration/jcrStats'
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const getStatus: DocumentNode = require('graphql-tag/loader!../fixtures/graphql/query/getStatus.graphql')
 
@@ -14,9 +14,14 @@ describe('JCR Stats - Admin UI', () => {
     beforeEach(() => {
         cy.login()
         cy.waitUntil(
-            () => cy.apollo({query: getStatus, fetchPolicy: 'no-cache'})
-                .then((r: {data: {jcrStats: {status: {running: boolean}}}}) => r.data.jcrStats.status.running === false),
-            {timeout: 60000, interval: 2000}
+            () =>
+                cy
+                    .apollo({ query: getStatus, fetchPolicy: 'no-cache' })
+                    .then(
+                        (r: { data: { jcrStats: { status: { running: boolean } } } }) =>
+                            r.data.jcrStats.status.running === false,
+                    ),
+            { timeout: 60000, interval: 2000 },
         )
     })
 
@@ -164,18 +169,123 @@ describe('JCR Stats - Admin UI', () => {
         cy.get('[role="alert"]').should('be.visible').and('not.be.empty')
     })
 
-    it('compares the current snapshot against a loaded baseline (diff)', () => {
+    // ------------------------------------------------------------------
+    // Saved-executions panel: a loaded file is auto-saved as a snapshot, then
+    // View reloads it, Compare diffs it against the current tree, Delete removes it.
+    // ------------------------------------------------------------------
+    it('lists a loaded snapshot in the Saved-executions panel with date + size metadata', () => {
         cy.login()
         cy.visit(adminPath)
-        // Current = sample v1 (loaded from file), baseline = v2 (different sizes)
         cy.get('[data-testid="jcrstats-load-input"]').selectFile('cypress/fixtures/sample-flamegraph.json', {
             force: true,
         })
         cy.get('[data-testid="jcrstats-flamegraph-react"]', { timeout: 30000 }).should('be.visible')
-        cy.get('[data-testid="jcrstats-baseline-input"]').selectFile('cypress/fixtures/sample-flamegraph-v2.json', {
+        // The auto-saved snapshot shows up in the saved-executions panel.
+        cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
+        // E-1: each row carries a "date · size" metadata line beside the filename.
+        cy.get('[data-testid="jcrstats-snapshots"]').should('contain', '·')
+    })
+
+    it('reloads a saved snapshot as the current tree via View', () => {
+        cy.login()
+        cy.visit(adminPath)
+        cy.get('[data-testid="jcrstats-load-input"]').selectFile('cypress/fixtures/sample-flamegraph.json', {
             force: true,
         })
-        // The comparison view appears with the changed node
-        cy.get('[data-testid="jcrstats-diff"]', { timeout: 10000 }).should('be.visible').and('contain', 'child-a')
+        cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
+        // Click the first row's View button and confirm the flamegraph renders the loaded tree.
+        cy.get('[data-testid="jcrstats-snapshots"]').contains('button', 'View').first().click()
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', { timeout: 30000 })
+            .should('be.visible')
+            .and('contain', 'loaded-sample')
+    })
+
+    it('enables Compare once a current result exists and switches to the diff view (E-4)', () => {
+        cy.login()
+        cy.visit(adminPath)
+        // Load a tree as the CURRENT result so Compare has something to diff a snapshot against.
+        cy.get('[data-testid="jcrstats-load-input"]').selectFile('cypress/fixtures/sample-flamegraph-v2.json', {
+            force: true,
+        })
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', { timeout: 30000 }).should('be.visible')
+        cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
+        // With a current tree present, Compare is enabled — clicking it switches to the diff view.
+        // (Diff content is data-dependent on shared server snapshots, so assert the view, not a row.)
+        cy.get('[data-testid="jcrstats-snapshots"]')
+            .contains('button', 'Compare')
+            .first()
+            .should('not.be.disabled')
+            .click()
+        cy.get('[data-testid="jcrstats-diff"]', { timeout: 10000 }).should('be.visible')
+    })
+
+    it('deletes a saved snapshot via the per-row Delete button', () => {
+        cy.login()
+        cy.visit(adminPath)
+        cy.get('[data-testid="jcrstats-load-input"]').selectFile('cypress/fixtures/sample-flamegraph.json', {
+            force: true,
+        })
+        // The loaded file is auto-saved server-side; wait for that to finish (the success banner says
+        // "saved to history") before counting rows, otherwise the async save can tick the count up
+        // right after we capture rowsBefore, defeating the post-delete "count decreased" assertion.
+        cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'saved to history')
+        cy.get('[data-testid="jcrstats-snapshots"]', { timeout: 30000 }).should('be.visible')
+        cy.get('[data-testid="jcrstats-snapshots"] li')
+            .its('length')
+            .then((rowsBefore) => {
+                // Delete uses an accessible inline two-step confirm (no native window.confirm):
+                // the first click arms the row, then the inline "Confirm delete" button performs it.
+                cy.get('[data-testid="jcrstats-snapshots"]').contains('button', 'Delete').first().click()
+                cy.get('[data-testid="jcrstats-snapshot-confirm-delete"]', { timeout: 10000 }).first().click()
+                // A success status banner confirms the deletion to sighted users (A-12).
+                cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'deleted')
+                // The list re-renders only after the post-delete refetch resolves, so use a retrying
+                // assertion (not a one-shot DOM read) to wait for the row count to actually shrink.
+                cy.get('[data-testid="jcrstats-snapshots"] li', { timeout: 30000 }).should(
+                    'have.length.lessThan',
+                    rowsBefore,
+                )
+            })
+    })
+
+    // ------------------------------------------------------------------
+    // Cancel a running computation: the Cancel button surfaces an info banner.
+    // ------------------------------------------------------------------
+    it('cancels a running computation and shows an info banner', () => {
+        cy.login()
+        cy.visit(adminPath)
+        // Compute the whole /sites subtree so the job runs long enough to be cancelled.
+        cy.get('#jcrstats-path').clear()
+        cy.get('#jcrstats-path').type('/sites')
+        cy.contains('button', 'Compute').click()
+        // Harden against racing a fast job: wait until the computation is visibly in progress
+        // (the progress block renders only while computing === true) before clicking Cancel, rather
+        // than assuming the job is still running by the time we act.
+        cy.get('[data-testid="jcrstats-progress"]', { timeout: 30000 }).should('be.visible')
+        cy.get('[data-testid="jcrstats-progress"]').contains('button', 'Cancel').click()
+        // An info banner (role="status", not role="alert") reports the cancellation, and the
+        // progress block disappears once watching stops.
+        cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'ancel')
+        cy.get('[data-testid="jcrstats-progress"]').should('not.exist')
+    })
+
+    // ------------------------------------------------------------------
+    // Exclusion add/remove round-trip via the flamegraph "Exclude this path" action.
+    // ------------------------------------------------------------------
+    it('adds then removes an exclusion (round-trip)', () => {
+        cy.login()
+        cy.visit(adminPath)
+        cy.get('#jcrstats-path').clear()
+        cy.get('#jcrstats-path').type('/sites/systemsite')
+        cy.contains('button', 'Compute').click()
+        cy.get('[data-testid="jcrstats-flamegraph-react"]', { timeout: 60000 }).should('be.visible')
+        // Focus a frame so the "Exclude this path" button appears, then exclude it.
+        cy.get('[data-testid="jcrstats-flamegraph-react"]').click(80, 10)
+        cy.contains('button', 'Exclude this path', { timeout: 10000 }).click()
+        // The excluded path now appears in the Excluded-paths panel.
+        cy.contains('Excluded paths', { timeout: 30000 }).should('be.visible')
+        // Remove it again and confirm the success status is announced.
+        cy.contains('button', 'Remove').first().click()
+        cy.get('[role="status"]', { timeout: 30000 }).should('contain', 'Exclusion removed')
     })
 })

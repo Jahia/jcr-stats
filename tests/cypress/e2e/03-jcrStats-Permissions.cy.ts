@@ -16,7 +16,7 @@ describe('JCR Stats — permission enforcement', () => {
     const DENIED_USER = 'jsDeniedUser'
     const ALLOWED_USER = 'jsAllowedUser'
     const PASSWORD = 'JsPerm9PwdTest'
-    const ADMIN_PATH = '/jahia/administration/jcrStatsExecution'
+    const ADMIN_PATH = '/jahia/administration/jcrStats'
     const TEST_PATH = '/sites/systemsite'
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires
