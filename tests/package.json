@@ -65,10 +65,13 @@
   "author": "",
   "license": "MIT",
   "resolutions": {
+    "@babel/core": "^7.29.6",
     "@babel/plugin-transform-modules-systemjs": "^7.29.4",
     "axios": "^1.16.0",
     "fast-uri": "^3.1.2",
     "ip-address": "^10.1.1",
-    "serialize-javascript": "^7.0.5"
+    "serialize-javascript": "^7.0.5",
+    "tar": "^7.5.16",
+    "undici": "^6.27.0"
   }
 }
