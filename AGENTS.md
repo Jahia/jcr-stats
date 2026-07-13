@@ -6,7 +6,7 @@ This file provides essential context for AI assistants working on the jcr-stats 
 
 **jcr-stats** is a Jahia DX module for analyzing and visualizing JCR subtree disk usage and node distribution. It consists of a Java backend (JCR traversal engine, GraphQL API), a React admin UI, and a Karaf shell command.
 
-**Version:** 2.1.2-SNAPSHOT  
+**Version:** 2.1.4-SNAPSHOT  
 **Root Package:** `org.jahia.community.jcrstats`  
 **Module ID:** `jcr-stats`
 
@@ -41,7 +41,7 @@ This file provides essential context for AI assistants working on the jcr-stats 
   - All decorated with `@GraphQLRequiresPermission("jcrStatsAdmin")`
   - DEFAULT_MAX_DEPTH = 6 (critical: couples with frontend MAX_DEPTH in JcrStats.jsx)
 
-- `JcrStatsMutation` — Mutations: compute(path), cancel(), addExclusion(path), removeExclusion(path), saveSnapshot(name), deleteSnapshot(path), computeSize(path, deleteTemporaryFile)
+- `JcrStatsMutation` — Mutations: compute(path), cancel(), addExclusion(path), removeExclusion(path), saveSnapshot(json), deleteSnapshot(path), computeSize(path, deleteTemporaryFile)
 
 - `JcrStatsQueryExtension`, `JcrStatsMutationExtension` — Extension providers that register the above under `jcrStats` namespace root
 

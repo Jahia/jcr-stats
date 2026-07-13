@@ -1,6 +1,6 @@
 # JCR Stats
 
-A comprehensive JCR space-analysis tool for Jahia DX that visualizes and compares disk usage and node distribution across JCR subtrees. Version 2.1.2 adds path exclusions, server-side cancellation, saved execution history, and improved traversal strategies for faster analysis of large trees.
+A comprehensive JCR space-analysis tool for Jahia DX that visualizes and compares disk usage and node distribution across JCR subtrees. Version 2.1.4 adds path exclusions, server-side cancellation, saved execution history, and improved traversal strategies for faster analysis of large trees.
 
 ## Overview
 
@@ -84,7 +84,7 @@ Every completed asynchronous computation is automatically saved as a JSON snapsh
 
 When you upload a snapshot using the **Upload** button, it is automatically persisted as a new entry in the saved executions history, joining the auto-saved runs.
 
-**Snapshot Accumulation:** Snapshots accumulate in the JCR folder by default. Consider periodically pruning old snapshots manually (or consult your Jahia administrator) to manage storage.
+**Snapshot Retention:** Snapshots are capped at the 50 most recent (`MAX_SNAPSHOTS`); the oldest is pruned automatically on every write (auto-saved runs and manual uploads share the same cap). No manual pruning is required to keep the folder bounded.
 
 #### Manual Download/Upload
 
@@ -366,12 +366,12 @@ mutation {
 }
 ```
 
-#### `jcrStats.saveSnapshot(name: String): Boolean`
+#### `jcrStats.saveSnapshot(json: String): Boolean`
 
-Saves the current (or most recently computed) tree as a JSON snapshot in the JCR at `/sites/systemsite/files/jcr-stats/snapshots/<name>.json`. Returns `true` on success.
+Stores a client-supplied snapshot JSON envelope (e.g. a file loaded in the UI) in the JCR under a **server-generated** timestamped filename `/sites/systemsite/files/jcr-stats/snapshots/jcr-stats-<yyyy-MM-dd'T'HH-mm-ss-SSS>.json`. The caller does not choose the filename. Returns `true` on success.
 
 **Arguments:**
-- `name` (required) — Base name for the snapshot file (timestamp is auto-appended)
+- `json` (required) — The full snapshot JSON in the jcr-stats export envelope (format `jcr-stats-flamegraph`). Rejected if empty or larger than 50 MB.
 
 #### `jcrStats.deleteSnapshot(path: String): Boolean`
 
@@ -463,7 +463,7 @@ jcr-stats:compute-size -p /sites/digital
 Computed 1024 node(s) under /sites/digital totalling 5 MB (flamegraph: /sites/systemsite/files/jcr-stats/jcr-stats-2024-01-15-14-30-45.html)
 ```
 
-The flamegraph HTML is stored in the JCR at `/sites/systemsite/files/jcr-stats` and also in the Tomcat temporary directory (typically `$CATALINA_TMPDIR`). Use `-d` to clean up the temporary file after upload.
+The flamegraph HTML is stored in the JCR at `/sites/systemsite/files/jcr-stats` and also in the JVM temporary directory (`java.io.tmpdir`; on a standard Tomcat this resolves to `$CATALINA_TMPDIR`). Use `-d` to clean up the temporary file after upload.
 
 ---
 
@@ -540,7 +540,7 @@ jcrStats.excludedPaths=/sites/archive,\
 
 - **Flamegraph is Mouse-Operated** — The interactive flamegraph visualization requires a mouse or touch device. Keyboard-only users should navigate using the **Tree table** view, which is fully keyboard accessible (arrow keys, Enter, Tab).
 
-- **Snapshot Accumulation** — Saved execution snapshots accumulate in `/sites/systemsite/files/jcr-stats/snapshots/` with no automatic retention policy. Administrators should periodically prune old snapshots to manage storage.
+- **Snapshot Retention** — Saved execution snapshots in `/sites/systemsite/files/jcr-stats/snapshots/` are capped at the 50 most recent (`MAX_SNAPSHOTS`); the oldest is pruned automatically on every write, so the folder is self-bounded and no manual pruning is required.
 
 - **Traversal Strategy** — By default, the computation walks the JCR hierarchy directly via `JCRNodeWrapper.getNodes()`, which is fast on direct trees but may skip branches whose children cannot be listed. A legacy `ISCHILDNODE` query-based strategy is available via `-DjcrStats.traversal=query` for environments with pathological JCR structures.
 
@@ -648,7 +648,7 @@ Tests include:
 - **JcrStatsQueryExtension** — Extends DXM GraphQL root Query with `jcrStats` namespace
 - **JcrStatsQuery** — Query operations: `size(path)`, `nodeCount(path)`, `tree(path, maxDepth)`, `status()`, `result(maxDepth)`, `exclusions()`, `snapshots()`, `reports()`
 - **JcrStatsMutationExtension** — Extends DXM GraphQL root Mutation with `jcrStats` namespace
-- **JcrStatsMutation** — Mutation operations: `compute(path)`, `cancel()`, `addExclusion(path)`, `removeExclusion(path)`, `saveSnapshot(name)`, `deleteSnapshot(path)`, `computeSize(path, deleteTemporaryFile)`
+- **JcrStatsMutation** — Mutation operations: `compute(path)`, `cancel()`, `addExclusion(path)`, `removeExclusion(path)`, `saveSnapshot(json)`, `deleteSnapshot(path)`, `computeSize(path, deleteTemporaryFile)`
 - **JcrStatsGraphQLExtensionsProvider** — GraphQL extension service provider
 
 ### Frontend
@@ -673,7 +673,7 @@ Tests include:
 
 ## Versioning
 
-**Current Version:** 2.1.2-SNAPSHOT
+**Current Version:** 2.1.4-SNAPSHOT
 
 **Root Package:** `org.jahia.community.jcrstats`
 
