@@ -85,6 +85,29 @@ public class JcrStatsServiceTest {
         assertThat(service.isLastRunCancelled()).isTrue();
     }
 
+    // --- U3: result cache is never cleared, so run A's tree is served while run B is in flight ---
+
+    @Test
+    public void getLastResult_duringInFlightRerun_stillServesPreviousRunsTree() throws Exception {
+        // Arrange: run A completed and cached its tree; run B is now in progress. start()/the running
+        // flag deliberately do NOT clear lastResult (only lastError is reset), so a caller polling
+        // result()/status().hasResult mid-recompute keeps seeing run A's stale tree until B finishes.
+        NodeStats runATree = new NodeStats("/run-a");
+        AtomicReference<NodeStats> lastResult = getField("lastResult");
+        lastResult.set(runATree);
+        setField("lastPath", "/run-a");
+        // Run B starts (single background job in progress).
+        AtomicBoolean running = getField("running");
+        running.set(true);
+
+        // Act / Assert: the cached result is unchanged and still advertised as available.
+        assertThat(service.isRunning()).as("run B is in flight").isTrue();
+        assertThat(service.getLastResult())
+                .as("the never-cleared cache still serves run A's tree during run B")
+                .isSameAs(runATree);
+        // This is the documented hazard the frontend startedAt-generation guard compensates for.
+    }
+
     // --- getElapsedMs branches ---
 
     @Test
