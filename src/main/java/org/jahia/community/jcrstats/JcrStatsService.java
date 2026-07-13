@@ -1,6 +1,5 @@
 package org.jahia.community.jcrstats;
 
-import org.jahia.osgi.BundleUtils;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
 import org.slf4j.Logger;
@@ -72,8 +71,8 @@ public class JcrStatsService {
         startedAt = System.currentTimeMillis();
         finishedAt = 0L;
         // Configured exclusions (if the config service is available) are removed from the totals.
-        final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
-        final Predicate<String> excludedPath = config == null ? p -> false : config::isExcluded;
+        // Shared with every other compute surface via JcrStatsComputer.liveExclusions() (D3 fix).
+        final Predicate<String> excludedPath = JcrStatsComputer.liveExclusions();
         executor.submit(() -> {
             LOGGER.info("JCR stats computation started for path {}", effectivePath);
             final JcrStatsComputer computer = new JcrStatsComputer();

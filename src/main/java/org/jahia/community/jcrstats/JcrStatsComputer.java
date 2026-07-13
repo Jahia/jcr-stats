@@ -4,6 +4,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.jahia.api.Constants;
+import org.jahia.osgi.BundleUtils;
 import org.jahia.services.content.JCRContentUtils;
 import org.jahia.services.content.JCRNodeIteratorWrapper;
 import org.jahia.services.content.JCRNodeWrapper;
@@ -141,6 +142,28 @@ public class JcrStatsComputer {
     }
 
     /**
+     * Resolves the live path-exclusion predicate from the OSGi {@link JcrStatsConfig} service, so that
+     * <em>every</em> compute surface — the asynchronous {@code compute()} job, the synchronous GraphQL
+     * queries ({@code size}/{@code nodeCount}/{@code tree}), the {@code computeSize} mutation and the
+     * Karaf {@code jcr-stats:compute-size} CLI — consistently skips the same configured subtrees. Falls
+     * back to a no-op predicate when the config service is unavailable (e.g. outside an OSGi container,
+     * as in unit tests), preserving the pre-exclusion behaviour when nothing is configured.
+     */
+    public static Predicate<String> liveExclusions() {
+        try {
+            final JcrStatsConfig config = BundleUtils.getOsgiService(JcrStatsConfig.class, null);
+            return config == null ? p -> false : config::isExcluded;
+        } catch (LinkageError e) {
+            // BundleUtils' OSGi framework holder cannot initialise outside a running OSGi container
+            // (e.g. in plain unit tests): resolving the service throws NoClassDefFoundError /
+            // ExceptionInInitializerError. Treat that as "no exclusions available" rather than failing
+            // the whole computation. In a real deployment the service resolves (or returns null) normally.
+            LOGGER.debug("OSGi config service unavailable; computing without path exclusions", e);
+            return p -> false;
+        }
+    }
+
+    /**
      * Computes the subtree size and writes the flamegraph file into the JCR, returning the
      * aggregated result.
      *
@@ -149,7 +172,10 @@ public class JcrStatsComputer {
      */
     public ComputeResult computeAndWriteFlamegraph(String path, boolean deleteTemporaryFile) throws RepositoryException {
         final String effectivePath = (path == null || path.isEmpty()) ? FileSystem.SEPARATOR : path;
-        final NodeStats nodeStats = computeStats(effectivePath);
+        // D3 fix: honour the configured path exclusions here too (this method backs both the computeSize
+        // mutation and the Karaf CLI). Previously this used the single-arg overload (p -> false), so
+        // "excluded" subtrees were still fully traversed and sized on every surface but the async job.
+        final NodeStats nodeStats = computeStats(effectivePath, new AtomicLong(), () -> false, liveExclusions());
         final String flamegraphPath = writeGraphFile(nodeStats, deleteTemporaryFile);
         return new ComputeResult(effectivePath, nodeStats.getSize(), countNodes(nodeStats), flamegraphPath);
     }

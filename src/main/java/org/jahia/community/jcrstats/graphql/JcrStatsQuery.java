@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 @GraphQLName("JcrStatsQuery")
 @GraphQLDescription("JCR Stats queries")
@@ -43,7 +44,9 @@ public class JcrStatsQuery {
             @GraphQLDescription("JCR path to compute (defaults to /)")
             String path) {
         try {
-            return new JcrStatsComputer().computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path).getSize();
+            // D3 fix: honour configured exclusions on the synchronous read path too (was p -> false).
+            return new JcrStatsComputer().computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path,
+                    new AtomicLong(), () -> false, JcrStatsComputer.liveExclusions()).getSize();
         } catch (RepositoryException e) {
             LOGGER.error("Failed to compute size for path {}", path, e);
             return -1L;
@@ -59,7 +62,9 @@ public class JcrStatsQuery {
             @GraphQLDescription("JCR path to compute (defaults to /)")
             String path) {
         try {
-            final NodeStats stats = new JcrStatsComputer().computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path);
+            // D3 fix: honour configured exclusions on the synchronous read path too (was p -> false).
+            final NodeStats stats = new JcrStatsComputer().computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path,
+                    new AtomicLong(), () -> false, JcrStatsComputer.liveExclusions());
             return JcrStatsComputer.countNodes(stats);
         } catch (RepositoryException e) {
             LOGGER.error("Failed to count nodes for path {}", path, e);
@@ -81,8 +86,10 @@ public class JcrStatsQuery {
             @GraphQLDescription("Maximum number of child levels to include (default 6). Deeper sizes remain aggregated into their ancestors.")
             Integer maxDepth) {
         try {
+            // D3 fix: honour configured exclusions on the synchronous read path too (was p -> false).
             final NodeStats stats = new JcrStatsComputer()
-                    .computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path);
+                    .computeStats(path == null || path.isEmpty() ? DEFAULT_PATH : path,
+                            new AtomicLong(), () -> false, JcrStatsComputer.liveExclusions());
             final int depth = maxDepth == null ? DEFAULT_MAX_DEPTH : Math.max(0, maxDepth);
             return new GqlNodeStats(stats, depth);
         } catch (RepositoryException e) {
