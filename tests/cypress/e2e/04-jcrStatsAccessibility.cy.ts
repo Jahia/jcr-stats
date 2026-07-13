@@ -80,10 +80,11 @@ describe('JCR Stats - Accessibility (WCAG 2.2)', () => {
         cy.contains('button', 'Compute').click()
         cy.get('[data-testid="jcrstats-flamegraph-react"]', { timeout: 60000 }).should('be.visible')
 
-        // The non-keyboard-operable flamegraph is exposed to AT as an image with a descriptive name.
+        // The non-keyboard-operable flamegraph container itself is exposed to AT as an image with a
+        // descriptive name: role="img" + aria-label live on the flamegraph element (it wraps the inner
+        // d3 flame SVG), not on an ancestor.
         cy.get('[data-testid="jcrstats-flamegraph-react"]')
-            .parents('[role="img"]')
-            .should('exist')
+            .should('have.attr', 'role', 'img')
             .and('have.attr', 'aria-label')
             .and('not.be.empty')
     })
