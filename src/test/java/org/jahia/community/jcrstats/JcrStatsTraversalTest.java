@@ -177,6 +177,64 @@ public class JcrStatsTraversalTest {
         assertThat(stats.getSize()).isEqualTo(300L);
     }
 
+    @Test
+    public void computeNode_multiValuedJcrData_contributesZeroSizeButIsStillCounted() throws Exception {
+        // U8: a multi-valued jcr:data property throws ValueFormatException from getLength() (there is no
+        // single length for a multi-valued property). Such a node is not a sizeable binary, so it must
+        // contribute 0 size rather than aborting the traversal — and it is still counted.
+        JCRNodeWrapper leaf = mock(JCRNodeWrapper.class);
+        when(leaf.getPath()).thenReturn("/r/multi");
+        when(leaf.hasProperty(JcrConstants.JCR_DATA)).thenReturn(true);
+        JCRPropertyWrapper multiValued = mock(JCRPropertyWrapper.class);
+        when(multiValued.getLength()).thenThrow(new javax.jcr.ValueFormatException("multi-valued property"));
+        when(leaf.getProperty(JcrConstants.JCR_DATA)).thenReturn(multiValued);
+        JCRNodeIteratorWrapper noChildren = mockIterator();
+        when(leaf.getNodes()).thenReturn(noChildren);
+
+        NodeStats stats = computer.computeNode(null, leaf, new AtomicLong(), () -> false, path -> false);
+
+        assertThat(stats.getSize()).as("multi-valued jcr:data is skipped, not sized").isZero();
+        assertThat(stats.getNodeCount()).as("the node is still counted").isEqualTo(1L);
+    }
+
+    @Test
+    public void computeNode_multiValuedJcrDataUnderParent_doesNotFailWholeTraversal() throws Exception {
+        // The same 0-sizing must hold mid-tree: a sibling with a normal binary is still summed.
+        JCRNodeWrapper good = mockNode("/r/good", 500L);
+        JCRNodeWrapper multi = mock(JCRNodeWrapper.class);
+        when(multi.getPath()).thenReturn("/r/multi");
+        when(multi.hasProperty(JcrConstants.JCR_DATA)).thenReturn(true);
+        JCRPropertyWrapper multiValued = mock(JCRPropertyWrapper.class);
+        when(multiValued.getLength()).thenThrow(new javax.jcr.ValueFormatException("multi-valued property"));
+        when(multi.getProperty(JcrConstants.JCR_DATA)).thenReturn(multiValued);
+        JCRNodeIteratorWrapper multiNoChildren = mockIterator();
+        when(multi.getNodes()).thenReturn(multiNoChildren);
+        JCRNodeWrapper root = mockNode("/r", NO_DATA, good, multi);
+
+        NodeStats stats = computer.computeNode(null, root, new AtomicLong(), () -> false, path -> false);
+
+        // root + good + multi = 3 nodes; size = 500 (good) + 0 (multi).
+        assertThat(stats.getNodeCount()).isEqualTo(3L);
+        assertThat(stats.getSize()).isEqualTo(500L);
+    }
+
+    @Test
+    public void computeNode_visitedCountReachesHardCap_abortsWithDocumentedError() throws Exception {
+        // F4: the MAX_VISITED_NODES (5,000,000) safety cap. Rather than materialising five million
+        // mock nodes, seed the visited counter to one below the ceiling: the very first node then trips
+        // the cap. The traversal must abort with a documented RepositoryException (not silently return a
+        // truncated tree), and NOT via the cancellation exception (which the service treats as a clean
+        // stop rather than an error).
+        JCRNodeWrapper root = mockNode("/r", NO_DATA, mockNode("/r/a", 100L));
+        AtomicLong nearCap = new AtomicLong(4_999_999L);
+
+        assertThatThrownBy(() -> computer.computeNode(null, root, nearCap, () -> false, path -> false))
+                .isInstanceOf(RepositoryException.class)
+                .isNotInstanceOf(JcrStatsComputer.CancelledException.class)
+                .hasMessageContaining("5000000")
+                .hasMessageContaining("visited nodes");
+    }
+
     // --- helpers ---
 
     /**
