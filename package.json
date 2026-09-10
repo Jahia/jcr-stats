@@ -106,7 +106,7 @@
     "sass-loader": "^12.4.0",
     "style-loader": "^3.3.1",
     "sync-pom-version-to-package": "^1.6.1",
-    "webpack": "^5.91.0",
+    "webpack": "^5.110.3",
     "webpack-bundle-analyzer": "^4.10.2",
     "webpack-cli": "^5.1.4"
   }
