@@ -67,6 +67,9 @@
   "resolutions": {
     "@babel/core": "^7.29.6",
     "@babel/plugin-transform-modules-systemjs": "^7.29.4",
+    "**/nyc/glob": "^14.0.3",
+    "**/nyc/test-exclude/glob": "^14.0.3",
+    "**/nyc/test-exclude/minimatch": "^11.0.1",
     "axios": "^1.20.0",
     "baseline-browser-mapping": "^2.11.22",
     "browserslist": "^4.28.9",
