@@ -24,7 +24,7 @@
         <jahia-depends>default,graphql-dxm-provider</jahia-depends>
         <jahia-module-type>system</jahia-module-type>
         <yarn.arguments>build:production</yarn.arguments>
-        <jacoco.version>0.8.11</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.javascript.lcov.reportPaths>coverage/lcov.info</sonar.javascript.lcov.reportPaths>
     </properties>
@@ -89,7 +89,7 @@
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>4.11.0</version>
+            <version>5.2.0</version>
             <scope>test</scope>
         </dependency>
         <!--
@@ -97,12 +97,12 @@
             subclass mock-maker cannot provide. Required to unit-test the code paths that run inside the
             static JCRTemplate.getInstance().doExecuteWithSystemSession(...) system session and the
             static Files.createTempFile(...) call, and to intercept `new JcrStatsComputer()` in the
-            Karaf command — all without a live JCR repository. Pinned to match mockito-core 4.11.0.
+            Karaf command — all without a live JCR repository. Pinned to match mockito-core 5.2.0.
         -->
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-inline</artifactId>
-            <version>4.11.0</version>
+            <version>5.2.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -112,7 +112,7 @@
             <plugin>
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
-                <version>1.15.0</version>
+                <version>1.15.4</version>
                 <executions>
                     <execution>
                         <id>install node and yarn</id>
@@ -121,7 +121,7 @@
                             <goal>install-node-and-yarn</goal>
                         </goals>
                         <configuration>
-                            <nodeVersion>v22.6.0</nodeVersion>
+                            <nodeVersion>v22.20.0</nodeVersion>
                             <yarnVersion>v1.22.21</yarnVersion>
                         </configuration>
                     </execution>
