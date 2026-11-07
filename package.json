@@ -43,6 +43,8 @@
     "**/cacache/glob": "^14.0.3",
     "**/jest-config/glob": "^14.0.3",
     "**/jest-runtime/glob": "^14.0.3",
+    "**/test-exclude/glob": "^14.0.3",
+    "**/test-exclude/minimatch": "^11.0.1",
     "baseline-browser-mapping": "^2.11.22",
     "browserslist": "^4.28.9",
     "fast-uri": "^3.1.9",
