@@ -4035,10 +4035,10 @@ graphql-tag@^2.12.6:
   dependencies:
     tslib "^2.1.0"
 
-graphql@^15.10.3:
-  version "15.10.3"
-  resolved "https://registry.yarnpkg.com/graphql/-/graphql-15.10.3.tgz#3f97c9d59f56847a725f1c6850d62f13c240c0ce"
-  integrity sha512-e2ut+7oOFe5/jENYc+T7GZnL5lIBd7vcWg6TlqVx1L/MFXY3CKOsEcP+jMPgL8uwcfrllJRNSmqq5psZahdKZg==
+graphql@^15.11.0:
+  version "15.11.0"
+  resolved "https://registry.yarnpkg.com/graphql/-/graphql-15.11.0.tgz#5cf5b7585e752d2c79fa41f79312c91df5c08ed7"
+  integrity sha512-8k3CvZ3VafZpQhDOOY5/FD6/c9ixG2pUkYBLFOyjI9T5WMrN9AylRWPsPRpI5+PgKXXubTOv/qKWs80TGNOAxA==
 
 has-bigints@^1.0.2:
   version "1.1.0"
@@ -6124,10 +6124,10 @@ sass-loader@^17.1.0:
   resolved "https://registry.yarnpkg.com/sass-loader/-/sass-loader-17.1.0.tgz#1100c176be08afd664baeecbb542aa02fd85d9c1"
   integrity sha512-EZ/u/bLkAErTKvIq/f81Bz6tgL/5Brt8hWOABdTsVdO+nX0PWx2rQhR6fyxVME+MhnQrrwecMDlm2G1y07hhpQ==
 
-sass@^1.107.1:
-  version "1.107.1"
-  resolved "https://registry.yarnpkg.com/sass/-/sass-1.107.1.tgz#a8a461744666e31f8973041a6b9ae7fcb265befd"
-  integrity sha512-aJ1/LvxOOb04YhmiBjzZn3jVwdHKol+OVhoMV6fFl02fF9T3i+5Mg9l/CnzqtM+NX5Jn5o3lAbs/ZJivTCLHfQ==
+sass@^1.108.1:
+  version "1.108.1"
+  resolved "https://registry.yarnpkg.com/sass/-/sass-1.108.1.tgz#169e456df9ad50bac4593435a207106a59b645a1"
+  integrity sha512-sIYgSvOPeD9wABwDS/ofNjHASSck+7h3jLkk7wG1NPFL3XeS6vOQjBlAFSmRV09kZr1yt/Tuayt6kKtBbLjHNQ==
   dependencies:
     chokidar "^5.0.0"
     immutable "^5.1.5"
@@ -6934,10 +6934,10 @@ watchpack@^2.6.3:
   dependencies:
     graceful-fs "^4.1.2"
 
-webpack-bundle-analyzer@^5.4.1:
-  version "5.4.1"
-  resolved "https://registry.yarnpkg.com/webpack-bundle-analyzer/-/webpack-bundle-analyzer-5.4.1.tgz#f160e0dcca52977795c096929deed00eea3b69ea"
-  integrity sha512-iapXbcmT36pf1Mm2cttxOQXvVh400kpysh6IO17zNoyLX0+rwsvz/N1c3wEwjCOjLxGO42U/z4o6R9rZg4wIug==
+webpack-bundle-analyzer@^5.4.2:
+  version "5.4.2"
+  resolved "https://registry.yarnpkg.com/webpack-bundle-analyzer/-/webpack-bundle-analyzer-5.4.2.tgz#67bd67d0a1d6b6f3c64693086effab133e167cb1"
+  integrity sha512-STw41VwPFXH2SDo/S9E3V1MRNOwusR0OOnqvrO1RYoaFRq01hZaSPsHzn1LuJ0nXnyHVQoe2ELMcJKmUyXPdbg==
   dependencies:
     "@discoveryjs/json-ext" "^0.6.3"
     acorn "^8.0.4"
